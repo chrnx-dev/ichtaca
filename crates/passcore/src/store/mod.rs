@@ -1,4 +1,104 @@
-//! placeholder
+//! The abstract store interface and its domain types.
 
 pub mod cli;
 pub mod fake;
+
+use crate::entry::Entry;
+use crate::error::Result;
+use crate::secret::Secret;
+
+/// A node in the entry tree. A directory has `path == None` and children;
+/// a leaf entry has `path == Some(full/path)` and no children.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryNode {
+    pub name: String,
+    pub path: Option<String>,
+    pub children: Vec<EntryNode>,
+}
+
+impl EntryNode {
+    pub fn is_leaf(&self) -> bool {
+        self.path.is_some() && self.children.is_empty()
+    }
+
+    /// Build a sorted tree from flat entry paths like `web/github.com`.
+    pub fn from_paths(paths: &[String]) -> Vec<EntryNode> {
+        let mut roots: Vec<EntryNode> = Vec::new();
+        for full in paths {
+            let segments: Vec<&str> = full.split('/').collect();
+            insert_path(&mut roots, &segments, full);
+        }
+        sort_nodes(&mut roots);
+        roots
+    }
+}
+
+fn insert_path(level: &mut Vec<EntryNode>, segments: &[&str], full: &str) {
+    let (head, rest) = match segments.split_first() {
+        Some(v) => v,
+        None => return,
+    };
+    let is_last = rest.is_empty();
+    let pos = level.iter().position(|n| n.name == *head);
+    let idx = match pos {
+        Some(i) => i,
+        None => {
+            level.push(EntryNode {
+                name: head.to_string(),
+                path: if is_last {
+                    Some(full.to_string())
+                } else {
+                    None
+                },
+                children: Vec::new(),
+            });
+            level.len() - 1
+        }
+    };
+    if !is_last {
+        insert_path(&mut level[idx].children, rest, full);
+    }
+}
+
+fn sort_nodes(nodes: &mut [EntryNode]) {
+    nodes.sort_by(|a, b| a.name.cmp(&b.name));
+    for n in nodes.iter_mut() {
+        sort_nodes(&mut n.children);
+    }
+}
+
+/// Abstract access to a password store. Implemented by `PassCliStore` (real)
+/// and `FakeStore` (tests). Future: `NativeStore` / `HybridStore`.
+pub trait PasswordStore {
+    /// All entry paths, sorted (e.g. `web/github.com`). No decryption.
+    fn list(&self) -> Result<Vec<String>>;
+
+    /// Decrypt and parse a single entry.
+    fn show(&self, path: &str) -> Result<Entry>;
+
+    /// Decrypt a single entry, returning the raw secret (no parsing).
+    fn show_raw(&self, path: &str) -> Result<Secret>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_tree_from_flat_paths() {
+        let paths = vec![
+            "email/work".to_string(),
+            "web/github.com".to_string(),
+            "web/gitlab.com".to_string(),
+        ];
+        let tree = EntryNode::from_paths(&paths);
+        // top level: email/, web/ (sorted, dirs are just names)
+        assert_eq!(tree.len(), 2);
+        assert_eq!(tree[0].name, "email");
+        assert_eq!(tree[1].name, "web");
+        assert_eq!(tree[1].children.len(), 2);
+        assert_eq!(tree[1].children[0].name, "github.com");
+        assert_eq!(tree[1].children[0].path.as_deref(), Some("web/github.com"));
+        assert!(tree[1].children[0].is_leaf());
+    }
+}
