@@ -27,7 +27,10 @@ impl Entry {
         } else {
             body.split('\n').map(|s| s.to_string()).collect()
         };
-        Self { lines, trailing_newline }
+        Self {
+            lines,
+            trailing_newline,
+        }
     }
 
     /// Reconstruct the exact original text (byte-identical if unmodified).
@@ -44,6 +47,7 @@ impl Entry {
         self.lines.first().map(String::as_str).unwrap_or("")
     }
 
+    /// Replace the password (first line), leaving all other lines untouched.
     pub fn set_password(&mut self, value: &str) {
         if self.lines.is_empty() {
             self.lines.push(value.to_string());
@@ -82,16 +86,30 @@ impl Entry {
             .map(str::trim)
     }
 
-    /// Tags collected from `@token` occurrences and an optional `tags:` field.
+    /// Tags collected from an optional `tags:` field (comma-separated, optional
+    /// leading `@`) and from `@token` occurrences on non-password lines.
+    /// Deduplicated, first-seen order preserved.
     pub fn tags(&self) -> Vec<String> {
+        use std::collections::HashSet;
         let mut tags = Vec::new();
+        let mut seen = HashSet::new();
         if let Some(list) = self.field("tags") {
-            tags.extend(list.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()));
+            for raw in list.split(',') {
+                let t = raw.trim().trim_start_matches('@');
+                if !t.is_empty() && seen.insert(t.to_string()) {
+                    tags.push(t.to_string());
+                }
+            }
         }
-        for line in &self.lines {
+        for line in self.lines.iter().skip(1) {
+            // Skip the `tags:` field line itself; it was parsed above and its
+            // `@`-prefixed words still carry comma punctuation.
+            if matches!(line.split_once(':'), Some((k, _)) if k.trim() == "tags") {
+                continue;
+            }
             for tok in line.split_whitespace() {
                 if let Some(tag) = tok.strip_prefix('@') {
-                    if !tag.is_empty() {
+                    if !tag.is_empty() && seen.insert(tag.to_string()) {
                         tags.push(tag.to_string());
                     }
                 }
@@ -175,5 +193,34 @@ mod tests {
         let mut e = Entry::parse("oldpw\nuser: bob\n");
         e.set_password("newpw");
         assert_eq!(e.serialize(), "newpw\nuser: bob\n");
+    }
+
+    #[test]
+    fn round_trip_empty_string() {
+        rt("");
+    }
+
+    #[test]
+    fn round_trip_single_newline() {
+        rt("\n");
+    }
+
+    #[test]
+    fn tags_from_tags_field_strip_at_and_dedup() {
+        let e = Entry::parse("pw\ntags: @work, personal, work\n@work @other\n");
+        assert_eq!(
+            e.tags(),
+            vec![
+                "work".to_string(),
+                "personal".to_string(),
+                "other".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn tags_ignore_at_in_password_line() {
+        let e = Entry::parse("@notatag\nuser: bob\n");
+        assert!(e.tags().is_empty());
     }
 }
