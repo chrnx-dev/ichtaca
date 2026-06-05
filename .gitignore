@@ -1,0 +1,7 @@
+/target
+**/target
+Cargo.lock
+.DS_Store
+
+# Local-only: planes, specs, docs de LLM/agentes (no rastreados)
+/specs/
