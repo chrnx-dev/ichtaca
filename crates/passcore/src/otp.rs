@@ -64,6 +64,11 @@ fn parse_uri(uri: &str) -> Result<TotpParams> {
                 digits = v
                     .parse()
                     .map_err(|_| PassError::Parse(format!("bad digits: {v}")))?;
+                if digits == 0 || digits > 9 {
+                    return Err(PassError::Parse(format!(
+                        "otpauth digits must be 1-9, got {digits}"
+                    )));
+                }
             }
             "period" => {
                 period = v
@@ -218,5 +223,11 @@ mod tests {
     #[test]
     fn rejects_missing_secret() {
         assert!(code_at("otpauth://totp/x?digits=6", 0).is_err());
+    }
+
+    #[test]
+    fn rejects_out_of_range_digits() {
+        let uri = "otpauth://totp/x?secret=GEZDGNBVGY3TQOJQ&digits=10";
+        assert!(code_at(uri, 59).is_err());
     }
 }

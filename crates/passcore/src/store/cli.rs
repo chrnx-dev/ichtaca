@@ -235,6 +235,13 @@ impl PasswordStore for PassCliStore {
     }
 
     fn remove(&mut self, path: &str) -> Result<()> {
+        // Best-effort pre-check: align with FakeStore semantics so both return
+        // EntryNotFound for a missing entry. This is not TOCTOU-free (the entry
+        // could be removed between the list and the rm), but it gives a clear
+        // error in the common case rather than silently succeeding with `pass rm -f`.
+        if !self.list()?.iter().any(|p| p == path) {
+            return Err(PassError::EntryNotFound(path.to_string()));
+        }
         self.run_pass(
             path,
             &["rm".to_string(), "-f".to_string(), path.to_string()],

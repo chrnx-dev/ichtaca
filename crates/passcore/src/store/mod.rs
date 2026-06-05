@@ -104,7 +104,9 @@ pub trait PasswordStore {
     /// Copy an entry (`pass cp`).
     fn cp(&mut self, from: &str, to: &str) -> Result<()>;
 
-    /// Generate a new password of `len` chars at `path` and return it.
+    /// Generate a password of `len` chars at `path` and return it. NOTE: this
+    /// overwrites any existing entry at `path` (no `AlreadyExists` check) — the
+    /// caller should confirm first if the entry may exist.
     /// `symbols == false` corresponds to `pass generate --no-symbols`.
     fn generate(&mut self, path: &str, len: usize, symbols: bool) -> Result<Secret>;
 }
