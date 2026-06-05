@@ -78,17 +78,53 @@ pub trait PasswordStore {
 
     /// Decrypt and parse a single entry. Errors with `PassError::Parse` if the
     /// decrypted bytes are not valid UTF-8 (rather than silently emptying them).
+    /// Provided default — do not remove.
     fn show(&self, path: &str) -> Result<Entry> {
         let secret = self.show_raw(path)?;
         let text = std::str::from_utf8(secret.expose_bytes())
             .map_err(|e| PassError::Parse(format!("entry `{path}` is not valid UTF-8: {e}")))?;
         Ok(Entry::parse(text))
     }
+
+    /// Create or overwrite an entry with the given raw decrypted contents.
+    /// The secret is passed to `pass` over STDIN, never argv. When `overwrite`
+    /// is false and the entry already exists, returns `PassError::AlreadyExists`.
+    fn insert(&mut self, path: &str, contents: &Secret, overwrite: bool) -> Result<()>;
+
+    /// Edit an entry interactively, delegating to `pass edit` / `$EDITOR`.
+    /// In a TUI this requires suspending the terminal; the core only shells out.
+    fn edit(&mut self, path: &str) -> Result<()>;
+
+    /// Remove an entry.
+    fn remove(&mut self, path: &str) -> Result<()>;
+
+    /// Move/rename an entry (`pass mv`).
+    fn mv(&mut self, from: &str, to: &str) -> Result<()>;
+
+    /// Copy an entry (`pass cp`).
+    fn cp(&mut self, from: &str, to: &str) -> Result<()>;
+
+    /// Generate a new password of `len` chars at `path` and return it.
+    /// `symbols == false` corresponds to `pass generate --no-symbols`.
+    fn generate(&mut self, path: &str, len: usize, symbols: bool) -> Result<Secret>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::secret::Secret;
+    use crate::store::fake::FakeStore;
+
+    #[test]
+    fn trait_object_exposes_write_methods() {
+        // Compile-time proof that writes are part of the trait surface and are
+        // callable through a trait object.
+        let mut store = FakeStore::new();
+        store.insert("web/x", &Secret::from("pw\n"), false).unwrap();
+        let dyn_store: &dyn PasswordStore = &store;
+        assert_eq!(dyn_store.list().unwrap(), vec!["web/x".to_string()]);
+    }
 
     #[test]
     fn builds_tree_from_flat_paths() {
@@ -130,6 +166,24 @@ mod tests {
             }
             fn show_raw(&self, _path: &str) -> Result<Secret> {
                 Ok(Secret::new(vec![0xff, 0xfe, 0xfd]))
+            }
+            fn insert(&mut self, _path: &str, _contents: &Secret, _overwrite: bool) -> Result<()> {
+                unimplemented!()
+            }
+            fn edit(&mut self, _path: &str) -> Result<()> {
+                unimplemented!()
+            }
+            fn remove(&mut self, _path: &str) -> Result<()> {
+                unimplemented!()
+            }
+            fn mv(&mut self, _from: &str, _to: &str) -> Result<()> {
+                unimplemented!()
+            }
+            fn cp(&mut self, _from: &str, _to: &str) -> Result<()> {
+                unimplemented!()
+            }
+            fn generate(&mut self, _path: &str, _len: usize, _symbols: bool) -> Result<Secret> {
+                unimplemented!()
             }
         }
 

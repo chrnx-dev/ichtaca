@@ -17,6 +17,9 @@ pub enum PassError {
     #[error("entry not found: {0}")]
     EntryNotFound(String),
 
+    #[error("entry already exists: {0}")]
+    AlreadyExists(String),
+
     #[error("failed to decrypt entry {entry}: {message}")]
     DecryptFailed { entry: String, message: String },
 

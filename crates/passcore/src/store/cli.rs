@@ -38,6 +38,63 @@ pub(crate) fn ensure_binaries_present() -> Result<()> {
     Ok(())
 }
 
+/// Argv for `pass insert`. `-m` reads the multiline body from STDIN.
+pub(crate) fn insert_args(path: &str, overwrite: bool) -> Vec<String> {
+    let mut args = vec!["insert".to_string(), "-m".to_string()];
+    if overwrite {
+        args.push("-f".to_string());
+    }
+    args.push(path.to_string());
+    args
+}
+
+/// Argv for `pass generate`. `--force` overwrites; `--no-symbols` drops symbols.
+pub(crate) fn generate_args(path: &str, len: usize, symbols: bool, overwrite: bool) -> Vec<String> {
+    let mut args = vec!["generate".to_string()];
+    if !symbols {
+        args.push("--no-symbols".to_string());
+    }
+    if overwrite {
+        args.push("--force".to_string());
+    }
+    args.push(path.to_string());
+    args.push(len.to_string());
+    args
+}
+
+/// Map a failed `pass` invocation's stderr to a specific error.
+pub(crate) fn classify_pass_failure(path: &str, stderr: &str) -> PassError {
+    if stderr.contains("not in the password store") {
+        PassError::EntryNotFound(path.to_string())
+    } else if stderr.contains("already") && stderr.contains("exist") {
+        PassError::AlreadyExists(path.to_string())
+    } else {
+        PassError::DecryptFailed {
+            entry: path.to_string(),
+            message: stderr.trim().to_string(),
+        }
+    }
+}
+
+/// Strip ANSI CSI escape sequences from a line (e.g. colored `pass generate`).
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // Skip until a letter terminates the CSI sequence.
+            for c2 in chars.by_ref() {
+                if c2.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 use walkdir::WalkDir;
 
 use crate::secret::Secret;
@@ -63,6 +120,20 @@ impl PassCliStore {
     /// and when the caller has already validated).
     pub fn with_store_dir(store_dir: PathBuf) -> Self {
         Self { store_dir }
+    }
+
+    /// Run a `pass` subcommand, capturing stdout. Maps failures via stderr.
+    fn run_pass(&self, ctx_path: &str, args: &[String]) -> Result<Vec<u8>> {
+        use std::process::Command;
+        let output = Command::new("pass")
+            .args(args)
+            .env("PASSWORD_STORE_DIR", &self.store_dir)
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(classify_pass_failure(ctx_path, &stderr));
+        }
+        Ok(output.stdout)
     }
 }
 
@@ -112,6 +183,105 @@ impl PasswordStore for PassCliStore {
         }
         Ok(Secret::new(output.stdout))
     }
+
+    fn insert(&mut self, path: &str, contents: &Secret, overwrite: bool) -> Result<()> {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        if !overwrite && self.list()?.iter().any(|p| p == path) {
+            return Err(PassError::AlreadyExists(path.to_string()));
+        }
+
+        let mut child = Command::new("pass")
+            .args(insert_args(path, overwrite))
+            .env("PASSWORD_STORE_DIR", &self.store_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        // Secret goes over STDIN, never argv (so it never shows in `ps`).
+        child
+            .stdin
+            .take()
+            .expect("stdin was piped")
+            .write_all(contents.expose_bytes())?;
+
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(classify_pass_failure(path, &stderr));
+        }
+        Ok(())
+    }
+
+    fn edit(&mut self, path: &str) -> Result<()> {
+        use std::process::Command;
+        // Inherit the terminal so `$EDITOR` (via `pass edit`) runs interactively.
+        // The TUI is responsible for suspending/restoring around this call.
+        let status = Command::new("pass")
+            .arg("edit")
+            .arg(path)
+            .env("PASSWORD_STORE_DIR", &self.store_dir)
+            .status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(PassError::DecryptFailed {
+                entry: path.to_string(),
+                message: "pass edit failed".to_string(),
+            })
+        }
+    }
+
+    fn remove(&mut self, path: &str) -> Result<()> {
+        self.run_pass(
+            path,
+            &["rm".to_string(), "-f".to_string(), path.to_string()],
+        )
+        .map(|_| ())
+    }
+
+    fn mv(&mut self, from: &str, to: &str) -> Result<()> {
+        self.run_pass(
+            from,
+            &[
+                "mv".to_string(),
+                "-f".to_string(),
+                from.to_string(),
+                to.to_string(),
+            ],
+        )
+        .map(|_| ())
+    }
+
+    fn cp(&mut self, from: &str, to: &str) -> Result<()> {
+        self.run_pass(
+            from,
+            &[
+                "cp".to_string(),
+                "-f".to_string(),
+                from.to_string(),
+                to.to_string(),
+            ],
+        )
+        .map(|_| ())
+    }
+
+    fn generate(&mut self, path: &str, len: usize, symbols: bool) -> Result<Secret> {
+        let out = self.run_pass(path, &generate_args(path, len, symbols, true))?;
+        // `pass generate` prints the password (often with ANSI). Take the last
+        // non-empty line and strip ANSI escapes defensively.
+        let text = String::from_utf8_lossy(&out);
+        let pw = text
+            .lines()
+            .rev()
+            .map(strip_ansi)
+            .find(|l| !l.trim().is_empty())
+            .map(|l| l.trim().to_string())
+            .unwrap_or_default();
+        Ok(Secret::from(format!("{pw}\n")))
+    }
 }
 
 #[cfg(test)]
@@ -119,6 +289,32 @@ mod tests {
     use super::*;
     use crate::store::PasswordStore;
     use tempfile::tempdir;
+
+    #[test]
+    fn generate_args_respect_overwrite_and_symbols() {
+        assert_eq!(
+            generate_args("web/x", 24, true, false),
+            vec!["generate", "web/x", "24"]
+        );
+        assert_eq!(
+            generate_args("web/x", 24, false, true),
+            vec!["generate", "--no-symbols", "--force", "web/x", "24"]
+        );
+    }
+
+    #[test]
+    fn insert_args_force_only_when_overwrite() {
+        assert_eq!(insert_args("a/b", false), vec!["insert", "-m", "a/b"]);
+        assert_eq!(insert_args("a/b", true), vec!["insert", "-m", "-f", "a/b"]);
+    }
+
+    #[test]
+    fn classify_pass_failure_maps_missing_entry() {
+        let err = classify_pass_failure("web/x", "Error: web/x is not in the password store.");
+        assert!(matches!(err, crate::error::PassError::EntryNotFound(_)));
+        let err = classify_pass_failure("web/x", "gpg: decryption failed");
+        assert!(matches!(err, crate::error::PassError::DecryptFailed { .. }));
+    }
 
     #[test]
     fn store_dir_defaults_to_password_store_under_home() {
