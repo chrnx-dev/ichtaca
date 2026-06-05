@@ -95,9 +95,27 @@ impl PasswordStore for PassCliStore {
         Ok(Entry::parse(self.show_raw(path)?.expose_str()))
     }
 
-    fn show_raw(&self, _path: &str) -> Result<Secret> {
-        // Implemented in Task 10.
-        unimplemented!("show_raw arrives in Task 10")
+    fn show_raw(&self, path: &str) -> Result<Secret> {
+        use std::process::Command;
+
+        let output = Command::new("pass")
+            .arg("show")
+            .arg(path)
+            .env("PASSWORD_STORE_DIR", &self.store_dir)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // `pass` prints "is not in the password store" for missing entries.
+            if stderr.contains("not in the password store") {
+                return Err(PassError::EntryNotFound(path.to_string()));
+            }
+            return Err(PassError::DecryptFailed {
+                entry: path.to_string(),
+                message: stderr.trim().to_string(),
+            });
+        }
+        Ok(Secret::new(output.stdout))
     }
 }
 
