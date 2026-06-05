@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::entry::Entry;
 use crate::error::{PassError, Result};
 use crate::secret::Secret;
 use crate::store::PasswordStore;
@@ -26,10 +25,6 @@ impl FakeStore {
 impl PasswordStore for FakeStore {
     fn list(&self) -> Result<Vec<String>> {
         Ok(self.entries.keys().cloned().collect())
-    }
-
-    fn show(&self, path: &str) -> Result<Entry> {
-        Ok(Entry::parse(self.show_raw(path)?.expose_str()))
     }
 
     fn show_raw(&self, path: &str) -> Result<Secret> {

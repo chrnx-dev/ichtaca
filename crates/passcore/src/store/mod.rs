@@ -4,7 +4,7 @@ pub mod cli;
 pub mod fake;
 
 use crate::entry::Entry;
-use crate::error::Result;
+use crate::error::{PassError, Result};
 use crate::secret::Secret;
 
 /// A node in the entry tree. A directory has `path == None` and children;
@@ -73,11 +73,17 @@ pub trait PasswordStore {
     /// All entry paths, sorted (e.g. `web/github.com`). No decryption.
     fn list(&self) -> Result<Vec<String>>;
 
-    /// Decrypt and parse a single entry.
-    fn show(&self, path: &str) -> Result<Entry>;
-
     /// Decrypt a single entry, returning the raw secret (no parsing).
     fn show_raw(&self, path: &str) -> Result<Secret>;
+
+    /// Decrypt and parse a single entry. Errors with `PassError::Parse` if the
+    /// decrypted bytes are not valid UTF-8 (rather than silently emptying them).
+    fn show(&self, path: &str) -> Result<Entry> {
+        let secret = self.show_raw(path)?;
+        let text = std::str::from_utf8(secret.expose_bytes())
+            .map_err(|e| PassError::Parse(format!("entry `{path}` is not valid UTF-8: {e}")))?;
+        Ok(Entry::parse(text))
+    }
 }
 
 #[cfg(test)]
@@ -110,5 +116,24 @@ mod tests {
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].name, "a");
         assert_eq!(tree[0].children.len(), 2);
+    }
+
+    #[test]
+    fn default_show_rejects_non_utf8() {
+        use crate::error::{PassError, Result};
+        use crate::secret::Secret;
+
+        struct BinaryStore;
+        impl PasswordStore for BinaryStore {
+            fn list(&self) -> Result<Vec<String>> {
+                Ok(vec![])
+            }
+            fn show_raw(&self, _path: &str) -> Result<Secret> {
+                Ok(Secret::new(vec![0xff, 0xfe, 0xfd]))
+            }
+        }
+
+        let err = BinaryStore.show("x").unwrap_err();
+        assert!(matches!(err, PassError::Parse(_)));
     }
 }

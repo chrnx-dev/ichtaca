@@ -40,7 +40,6 @@ pub(crate) fn ensure_binaries_present() -> Result<()> {
 
 use walkdir::WalkDir;
 
-use crate::entry::Entry;
 use crate::secret::Secret;
 use crate::store::PasswordStore;
 
@@ -84,15 +83,11 @@ impl PasswordStore for PassCliStore {
                 Err(_) => continue,
             };
             let rel_str = rel.to_string_lossy().replace('\\', "/");
-            let trimmed = rel_str.trim_end_matches(".gpg").to_string();
+            let trimmed = rel_str.strip_suffix(".gpg").unwrap_or(&rel_str).to_string();
             paths.push(trimmed);
         }
         paths.sort();
         Ok(paths)
-    }
-
-    fn show(&self, path: &str) -> Result<Entry> {
-        Ok(Entry::parse(self.show_raw(path)?.expose_str()))
     }
 
     fn show_raw(&self, path: &str) -> Result<Secret> {
@@ -171,5 +166,15 @@ mod tests {
             store.list().unwrap(),
             vec!["email", "web/github.com", "web/gitlab.com"]
         );
+    }
+
+    #[test]
+    fn list_strips_only_one_gpg_suffix() {
+        // An entry literally named "weird.gpg" is stored as "weird.gpg.gpg".
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("weird.gpg.gpg"), b"x").unwrap();
+        let store = PassCliStore::with_store_dir(root.to_path_buf());
+        assert_eq!(store.list().unwrap(), vec!["weird.gpg"]);
     }
 }
