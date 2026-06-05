@@ -7,6 +7,7 @@ mod action;
 mod keymap;
 mod state;
 mod tree;
+mod update;
 
 fn main() {
     // Real entrypoint arrives in Task 13. For now, prove the crate builds.
