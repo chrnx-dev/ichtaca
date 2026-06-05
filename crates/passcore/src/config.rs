@@ -13,6 +13,16 @@ pub struct Config {
     /// Override for `$PASSWORD_STORE_DIR`.
     pub store_dir: Option<PathBuf>,
     pub clipboard: ClipboardConfig,
+    /// User-defined entry templates, overriding built-ins by name.
+    pub templates: Vec<TemplateConfig>,
+}
+
+/// A config-defined entry template (suggested keys for new entries).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TemplateConfig {
+    pub name: String,
+    #[serde(default)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
