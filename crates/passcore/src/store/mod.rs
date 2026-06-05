@@ -101,4 +101,14 @@ mod tests {
         assert_eq!(tree[1].children[0].path.as_deref(), Some("web/github.com"));
         assert!(tree[1].children[0].is_leaf());
     }
+
+    #[test]
+    fn tree_helper_on_store_output() {
+        // A store's flat list converts to a tree via EntryNode::from_paths.
+        let paths = vec!["a/b".to_string(), "a/c".to_string()];
+        let tree = EntryNode::from_paths(&paths);
+        assert_eq!(tree.len(), 1);
+        assert_eq!(tree[0].name, "a");
+        assert_eq!(tree[0].children.len(), 2);
+    }
 }
