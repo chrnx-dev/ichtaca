@@ -3,6 +3,7 @@
 //! This file is intentionally thin: terminal glue only. All logic lives in the
 //! sibling modules (`state`, `tree`, `action`, `keymap`, `update`, `ui`, ...).
 
+mod action;
 mod state;
 mod tree;
 
