@@ -10,8 +10,10 @@ pub mod secret;
 pub mod store;
 
 pub use config::Config;
-pub use entry::Entry;
+pub use entry::{Entry, Template};
 pub use error::{PassError, Result};
+pub use otp::{code_at, current, Otp};
+pub use search::{deep, fuzzy_paths, PathHit};
 pub use secret::Secret;
 pub use store::cli::PassCliStore;
 pub use store::fake::FakeStore;
