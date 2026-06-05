@@ -11,4 +11,4 @@ pub mod store;
 
 // Re-exports are added in later tasks as the types come into existence.
 // pub use error::PassError;
-// pub use secret::Secret;
+pub use secret::Secret;
