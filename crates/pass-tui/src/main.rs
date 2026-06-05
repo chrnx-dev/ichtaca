@@ -4,6 +4,7 @@
 //! sibling modules (`state`, `tree`, `action`, `keymap`, `update`, `ui`, ...).
 
 mod action;
+mod keymap;
 mod state;
 mod tree;
 
