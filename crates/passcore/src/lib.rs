@@ -5,6 +5,7 @@ pub mod config;
 pub mod entry;
 pub mod error;
 pub mod otp;
+pub mod search;
 pub mod secret;
 pub mod store;
 
