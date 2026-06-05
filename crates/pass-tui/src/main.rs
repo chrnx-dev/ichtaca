@@ -4,6 +4,7 @@
 //! sibling modules (`state`, `tree`, `action`, `keymap`, `update`, `ui`, ...).
 
 mod state;
+mod tree;
 
 fn main() {
     // Real entrypoint arrives in Task 13. For now, prove the crate builds.
