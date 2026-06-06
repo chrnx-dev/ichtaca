@@ -24,15 +24,82 @@ pub struct StatusBar {
 
 impl Default for StatusBar {
     fn default() -> Self {
-        // Phase-1 hint line: "q quit"
+        // Browse-mode hint line (Phase 2).
+        // Format: key(gold bold) label(muted)  key label  ...
         let hint_line = Line::from(vec![
+            Span::styled(
+                " ↑↓",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled("/jk", Style::default().fg(theme::MUTED_BRIGHT)),
+            Span::styled(" move", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "←→",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled("/hl", Style::default().fg(theme::MUTED_BRIGHT)),
+            Span::styled(" fold", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "c",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled(" copy", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "s",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled(" reveal", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "/",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled(" search", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "a",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled(" add", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "e",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled(" edit", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
+            Span::styled(
+                "d",
+                Style::default()
+                    .fg(theme::GOLD)
+                    .add_modifier(TextModifiers::BOLD),
+            ),
+            Span::styled(" del", Style::default().fg(theme::MUTED)),
+            Span::raw("  "),
             Span::styled(
                 "q",
                 Style::default()
                     .fg(theme::GOLD)
                     .add_modifier(TextModifiers::BOLD),
             ),
-            Span::styled(" quit", Style::default().fg(theme::MUTED_BRIGHT)),
+            Span::styled(" quit", Style::default().fg(theme::MUTED)),
         ]);
 
         let inner = Paragraph::default()

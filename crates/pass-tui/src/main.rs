@@ -1,6 +1,7 @@
 //! pass-tui — Ichtaca TUI frontend (tui-realm edition).
 //!
-//! Phase 1: blank themed window (Header + StatusBar) that quits on `q`/Ctrl-C.
+//! Phase 2: Tree panel (treeview) + Detail panel (fields / masked password /
+//! OTP with tick refresh / tags / copy) on top of the Phase-1 themed frame.
 
 mod components;
 mod domain;
@@ -54,18 +55,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Initialise tui-realm application.
     let app: Application<Id, Msg, NoUserEvent> = Application::init(listener_cfg);
 
-    // Build the model and mount Phase-1 components.
+    // Build the model and mount Phase-1 + Phase-2 components.
     let mut model = Model {
         app,
         quit: false,
         redraw: true,
         store,
         config,
+        selected_path: None,
+        detail_entry: None,
+        reveal: false,
+        notice: None,
     };
     model.mount_phase1();
+    model.mount_phase2();
 
-    // Subscribe StatusBar to global quit keys so they fire even when no
-    // component has explicit focus.
+    // ── Global subscriptions ─────────────────────────────────────────────────
+    // StatusBar handles q/Esc/Ctrl-C as quit; Tree handles c, s, and navigation.
+    // We also subscribe Tree to the Tick event for OTP refresh.
+
+    // q — quit (global fallback via StatusBar)
     model
         .app
         .subscribe(
@@ -75,8 +84,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 SubClause::Always,
             ),
         )
-        .ok(); // already subscribed is fine
+        .ok();
 
+    // Esc — quit
     model
         .app
         .subscribe(
@@ -88,6 +98,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .ok();
 
+    // Ctrl-C — quit
     model
         .app
         .subscribe(
@@ -97,6 +108,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 SubClause::Always,
             ),
         )
+        .ok();
+
+    // Tick — routed to Tree so it can emit Msg::Tick which triggers OTP refresh.
+    model
+        .app
+        .subscribe(&Id::Tree, Sub::new(EventClause::Tick, SubClause::Always))
         .ok();
 
     // ── Main loop ────────────────────────────────────────────────────────────
