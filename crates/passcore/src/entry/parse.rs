@@ -77,6 +77,22 @@ impl Entry {
         self.lines.push(format!("{key}: {value}"));
     }
 
+    /// Remove the first `key: value` line (after the password line) whose key
+    /// trims to `key`. Returns true if a line was removed. Other lines/order
+    /// are preserved; line 0 (password) is never touched.
+    pub fn remove_field(&mut self, key: &str) -> bool {
+        let idx = self.lines.iter().enumerate().skip(1).find_map(|(i, line)| {
+            let (k, _) = line.split_once(':')?;
+            (k.trim() == key).then_some(i)
+        });
+        if let Some(i) = idx {
+            self.lines.remove(i);
+            true
+        } else {
+            false
+        }
+    }
+
     /// The first `otpauth://` line, if any.
     pub fn otp_uri(&self) -> Option<&str> {
         self.lines
@@ -352,5 +368,48 @@ mod tests {
         assert!(s.contains("@x"), "@x appended");
         assert!(s.contains("note"), "note intact");
         assert_eq!(e.password(), "pw");
+    }
+
+    // ── remove_field ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn remove_field_removes_matching_line() {
+        let mut e = Entry::parse("pw\nuser: bob\nurl: x\nnote\n");
+        assert!(e.remove_field("url"), "should return true when found");
+        let s = e.serialize();
+        assert!(!s.contains("url:"), "url line must be gone");
+        assert!(s.contains("user: bob"), "user: bob must be intact");
+        assert!(s.contains("note"), "note must be intact");
+        assert_eq!(e.password(), "pw", "password must be intact");
+    }
+
+    #[test]
+    fn remove_field_absent_returns_false() {
+        let mut e = Entry::parse("pw\nuser: bob\nurl: x\n");
+        let before = e.serialize();
+        assert!(!e.remove_field("missing"), "absent key returns false");
+        assert_eq!(e.serialize(), before, "entry must be unchanged");
+    }
+
+    #[test]
+    fn remove_field_never_touches_password() {
+        // Password line looks like a key: value pair; remove_field must ignore it.
+        let mut e = Entry::parse("key: secret\nuser: bob\n");
+        assert!(!e.remove_field("key"), "must not match password at index 0");
+        assert_eq!(e.password(), "key: secret", "password line intact");
+        assert!(e.serialize().contains("user: bob"), "user line intact");
+    }
+
+    #[test]
+    fn remove_field_round_trip_unrelated_lines_intact() {
+        let input = "pw\nuser: bob\nurl: example.com\nnote line\n";
+        let mut e = Entry::parse(input);
+        assert!(e.remove_field("url"));
+        let s = e.serialize();
+        // All unrelated lines are byte-identical in their original form.
+        assert!(s.starts_with("pw\n"), "password line byte-identical");
+        assert!(s.contains("user: bob"), "user field byte-identical");
+        assert!(s.contains("note line"), "note line byte-identical");
+        assert!(s.ends_with('\n'), "trailing newline preserved");
     }
 }
