@@ -1,18 +1,18 @@
 //! Pure mapping from a crossterm `KeyEvent` (plus current `Mode` and config) to
 //! an `Action`. No terminal, no state mutation.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use passcore::config::KeybindingsConfig;
 
 use crate::action::Action;
 use crate::state::Mode;
 
 /// Resolve a key event into an action for the current mode.
-#[allow(dead_code)]
 pub fn map(ev: KeyEvent, mode: &Mode, kb: &KeybindingsConfig) -> Action {
     match mode {
         Mode::Browse => map_browse(ev, kb),
-        Mode::Search | Mode::EditForm => map_text_input(ev),
+        Mode::Search => map_text_input(ev),
+        Mode::EditForm => map_edit_form(ev),
         Mode::Confirm(_) => map_confirm(ev),
         Mode::Help => map_help(ev),
     }
@@ -75,6 +75,16 @@ fn map_text_input(ev: KeyEvent) -> Action {
         KeyCode::Char(c) => Action::Input(c),
         _ => Action::Noop,
     }
+}
+
+/// Keymap for the create/edit form overlay.
+/// Extends `map_text_input` with Ctrl-g → `GenerateInField`.
+fn map_edit_form(ev: KeyEvent) -> Action {
+    // Ctrl-g generates a password into the focused field.
+    if ev.code == KeyCode::Char('g') && ev.modifiers == KeyModifiers::CONTROL {
+        return Action::GenerateInField;
+    }
+    map_text_input(ev)
 }
 
 fn map_confirm(ev: KeyEvent) -> Action {
@@ -163,6 +173,31 @@ mod tests {
                 &kb
             ),
             Action::Accept
+        );
+    }
+
+    #[test]
+    fn edit_form_ctrl_g_maps_to_generate_in_field() {
+        let kb = KeybindingsConfig::default();
+        let ctrl_g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+        assert_eq!(
+            map(ctrl_g, &Mode::EditForm, &kb),
+            Action::GenerateInField,
+            "Ctrl-g in EditForm mode should produce GenerateInField"
+        );
+    }
+
+    #[test]
+    fn edit_form_regular_chars_still_route_to_input() {
+        let kb = KeybindingsConfig::default();
+        assert_eq!(map(key('a'), &Mode::EditForm, &kb), Action::Input('a'));
+        assert_eq!(
+            map(
+                KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                &Mode::EditForm,
+                &kb
+            ),
+            Action::Cancel
         );
     }
 
