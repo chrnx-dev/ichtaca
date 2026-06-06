@@ -171,6 +171,37 @@ impl Entry {
         }
         tags
     }
+
+    /// Trimmed keys of all `key: value` lines after line 0, excluding any
+    /// `otpauth://` line and any dedicated `@tag` line (a non-empty line whose
+    /// every whitespace token starts with `@`).
+    pub fn field_keys(&self) -> Vec<String> {
+        self.fields().into_iter().map(|(k, _)| k).collect()
+    }
+
+    /// Trimmed key+value pairs of all `key: value` lines after line 0, applying
+    /// the same skipping rules as [`field_keys`](Self::field_keys): excludes the
+    /// password line, any `otpauth://` line, and any dedicated `@tag` line.
+    pub fn fields(&self) -> Vec<(String, String)> {
+        self.lines
+            .iter()
+            .skip(1)
+            .filter_map(|line| {
+                if is_otp_line(line) || is_dedicated_tag_line(line) {
+                    return None;
+                }
+                let (k, v) = line.split_once(':')?;
+                let key = k.trim();
+                (!key.is_empty()).then(|| (key.to_string(), v.trim().to_string()))
+            })
+            .collect()
+    }
+}
+
+/// Returns `true` when `line` is an `otpauth://` URI line (ignoring leading
+/// whitespace).
+fn is_otp_line(line: &str) -> bool {
+    line.trim_start().starts_with("otpauth://")
 }
 
 /// Returns `true` when every whitespace-separated token in `line` starts with
@@ -411,5 +442,54 @@ mod tests {
         assert!(s.contains("user: bob"), "user field byte-identical");
         assert!(s.contains("note line"), "note line byte-identical");
         assert!(s.ends_with('\n'), "trailing newline preserved");
+    }
+
+    // ── field_keys / fields ────────────────────────────────────────────────────
+
+    #[test]
+    fn field_keys_returns_kv_keys_after_line0() {
+        let e = Entry::parse("pw\nuser: bob\nurl: example.com\n");
+        assert_eq!(e.field_keys(), vec!["user".to_string(), "url".to_string()]);
+    }
+
+    #[test]
+    fn field_keys_skips_password_otp_and_tag_lines() {
+        let e = Entry::parse(
+            "pw\nuser: bob\notpauth://totp/x?secret=ABC\n@work @home\nurl: example.com\n",
+        );
+        assert_eq!(e.field_keys(), vec!["user".to_string(), "url".to_string()]);
+    }
+
+    #[test]
+    fn field_keys_trims_keys() {
+        let e = Entry::parse("pw\n  user : bob\n");
+        assert_eq!(e.field_keys(), vec!["user".to_string()]);
+    }
+
+    #[test]
+    fn fields_returns_trimmed_key_value_pairs() {
+        let e = Entry::parse("pw\n  user :  bob \nurl: example.com\n");
+        assert_eq!(
+            e.fields(),
+            vec![
+                ("user".to_string(), "bob".to_string()),
+                ("url".to_string(), "example.com".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn fields_skips_password_otp_and_tag_lines() {
+        let e = Entry::parse(
+            "pw\nuser: bob\notpauth://totp/x?secret=ABC\n@work\nurl: example.com\n",
+        );
+        let f = e.fields();
+        assert_eq!(f.len(), 2, "only user and url fields expected; got {f:?}");
+        assert!(f.iter().any(|(k, v)| k == "user" && v == "bob"));
+        assert!(f.iter().any(|(k, v)| k == "url" && v == "example.com"));
+        assert!(
+            !f.iter().any(|(_, v)| v.contains("otpauth")),
+            "otp must not appear as a field; got {f:?}"
+        );
     }
 }

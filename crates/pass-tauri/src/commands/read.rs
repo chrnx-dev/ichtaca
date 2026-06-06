@@ -30,27 +30,9 @@ pub fn show_meta_impl(state: &AppState, path: String) -> CommandResult<EntryMeta
     let store = state.store();
     let entry = store.show(&path).map_err(CommandError::from)?;
 
-    // Enumerate key:value pairs from the serialized text, skipping:
-    //   line 0 (password), any `otpauth://` line, any `@tag`-only line.
-    let serialized = entry.serialize();
-    let mut fields = Vec::new();
-    for line in serialized.lines().skip(1) {
-        let trimmed = line.trim();
-        if trimmed.starts_with("otpauth://") {
-            continue;
-        }
-        // Skip bare `@tag` lines (all whitespace-separated tokens start with @)
-        if !trimmed.is_empty() && trimmed.split_whitespace().all(|tok| tok.starts_with('@')) {
-            continue;
-        }
-        if let Some((k, v)) = line.split_once(':') {
-            let key = k.trim().to_string();
-            let val = v.trim().to_string();
-            if !key.is_empty() {
-                fields.push((key, val));
-            }
-        }
-    }
+    // Key:value pairs, skipping line 0 (password), any `otpauth://` line, and
+    // any dedicated `@tag` line. See `Entry::fields`.
+    let fields = entry.fields();
 
     let tags = entry.tags();
     let has_otp = entry.otp_uri().is_some();
