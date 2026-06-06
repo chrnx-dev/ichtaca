@@ -172,6 +172,63 @@ impl Entry {
         tags
     }
 
+    /// Return the free-text (notes) lines: lines after line 0 that are not
+    /// `key: value` pairs, not `otpauth://` lines, and not dedicated `@tag`
+    /// lines.  Blank lines are included.
+    ///
+    /// These are the lines that the Notes textarea represents.  On save, the
+    /// existing notes lines in the entry are replaced by whatever the user
+    /// typed in the textarea.
+    pub fn notes_lines(&self) -> Vec<String> {
+        self.lines
+            .iter()
+            .skip(1)
+            .filter(|line| {
+                if is_otp_line(line) || is_dedicated_tag_line(line) {
+                    return false;
+                }
+                // A structured key:value line has a non-empty trimmed key.
+                match line.split_once(':') {
+                    Some((k, _)) if !k.trim().is_empty() => false,
+                    _ => true, // no colon, or empty key → notes line
+                }
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Replace all free-text (notes) lines in the entry with `new_lines`.
+    ///
+    /// "Notes lines" are exactly those returned by [`notes_lines`](Self::notes_lines).
+    /// This removes all existing notes lines (after line 0) and appends the
+    /// new ones at the end.  Structured lines (password, key:value, otpauth,
+    /// @tags) are preserved in place.
+    pub fn set_notes(&mut self, new_lines: &[String]) {
+        // Build the new lines vec: keep line 0 (password) + all non-notes
+        // lines from line 1 onward + append the new notes lines.
+        let password = self.lines.first().cloned().unwrap_or_default();
+        let mut kept: Vec<String> = std::iter::once(password)
+            .chain(
+                self.lines
+                    .iter()
+                    .skip(1)
+                    .filter(|line| {
+                        // Keep structured lines; drop free-text notes.
+                        is_otp_line(line)
+                            || is_dedicated_tag_line(line)
+                            || line
+                                .split_once(':')
+                                .is_some_and(|(k, _)| !k.trim().is_empty())
+                    })
+                    .cloned(),
+            )
+            .collect();
+        for line in new_lines {
+            kept.push(line.clone());
+        }
+        self.lines = kept;
+    }
+
     /// Trimmed keys of all `key: value` lines after line 0, excluding any
     /// `otpauth://` line and any dedicated `@tag` line (a non-empty line whose
     /// every whitespace token starts with `@`).

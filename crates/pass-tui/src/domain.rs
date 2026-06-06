@@ -48,6 +48,41 @@ pub fn generate_password(len: usize, symbols: bool) -> String {
 // Folder-prefix autocomplete helpers (Fix 3 — Create path field)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Create-form path prefix helper (Enhancement 1)
+// ---------------------------------------------------------------------------
+
+/// Compute the directory prefix to pre-fill the Path field when the user
+/// opens the CREATE form from a given tree selection.
+///
+/// Rules:
+/// - `selected` is `None` or the virtual root (`""`): returns `""`.
+/// - `selected` is a real entry (leaf — `is_entry == true`):
+///   returns everything up to and including the last `/`, e.g.
+///   `"infra/mac-studio"` → `"infra/"`.  If the path has no `/`,
+///   returns `""`.
+/// - `selected` is a directory (full path, `is_entry == false`):
+///   returns the path + `"/"`, e.g. `"infra"` → `"infra/"`.
+///
+/// The returned prefix is ready to use as the initial value of the Path input
+/// so the user only has to type the entry name and press Enter.
+pub fn create_path_prefix(selected: Option<&str>, is_entry: bool) -> String {
+    match selected {
+        None | Some("") => String::new(),
+        Some(path) => {
+            if is_entry {
+                match path.rfind('/') {
+                    Some(idx) => path[..=idx].to_string(),
+                    None => String::new(),
+                }
+            } else {
+                // Directory node: full-path id (e.g. "infra" or "a/b").
+                format!("{path}/")
+            }
+        }
+    }
+}
+
 /// Return all unique folder prefixes derived from `all_paths` whose prefix
 /// matches `typed` (case-sensitive).
 ///
@@ -154,6 +189,48 @@ mod tests {
             1,
             "'web/' must appear exactly once"
         );
+    }
+
+    // ── create_path_prefix ───────────────────────────────────────────────────
+
+    #[test]
+    fn prefix_none_returns_empty() {
+        assert_eq!(create_path_prefix(None, false), "");
+        assert_eq!(create_path_prefix(None, true), "");
+    }
+
+    #[test]
+    fn prefix_empty_string_returns_empty() {
+        assert_eq!(create_path_prefix(Some(""), false), "");
+        assert_eq!(create_path_prefix(Some(""), true), "");
+    }
+
+    #[test]
+    fn prefix_leaf_with_dir_returns_dir_slash() {
+        // e.g. user is on "infra/mac-studio" (a real entry)
+        assert_eq!(create_path_prefix(Some("infra/mac-studio"), true), "infra/");
+    }
+
+    #[test]
+    fn prefix_leaf_nested_returns_parent_slash() {
+        assert_eq!(create_path_prefix(Some("a/b/entry"), true), "a/b/");
+    }
+
+    #[test]
+    fn prefix_leaf_no_slash_returns_empty() {
+        // Top-level entry (no directory segment)
+        assert_eq!(create_path_prefix(Some("toplevel"), true), "");
+    }
+
+    #[test]
+    fn prefix_directory_returns_path_slash() {
+        // User is on the "infra" directory node
+        assert_eq!(create_path_prefix(Some("infra"), false), "infra/");
+    }
+
+    #[test]
+    fn prefix_nested_directory_returns_full_path_slash() {
+        assert_eq!(create_path_prefix(Some("a/b"), false), "a/b/");
     }
 
     // ── OTP / password tests (existing) ──────────────────────────────────────

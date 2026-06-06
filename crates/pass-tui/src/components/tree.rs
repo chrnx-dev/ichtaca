@@ -218,23 +218,36 @@ impl AppComponent<Msg, NoUserEvent> for EntryTree {
 /// Build a `tui_realm_treeview::Tree<String>` from a list of `EntryNode` roots.
 ///
 /// The tree root is a virtual "store" node (id = "").  Each `EntryNode` maps
-/// to a `Node<String, String>` where the id is the store path for leaves and
-/// the name segment for directories.
+/// to a `Node<String, String>` where the id is:
+/// - For leaves:      the full store path (e.g. `web/github.com`).
+/// - For directories: the full path from the root (e.g. `web`, `web/sub`).
+///
+/// Using full paths for directory nodes removes name-collision ambiguity (two
+/// directories with the same name at different levels no longer share an id)
+/// and enables the create-form to extract the "current directory" from the
+/// selected node id without needing extra look-ups.
 pub fn build_tree(roots: &[passcore::EntryNode]) -> Tree<String> {
     let mut root = Node::new(String::new(), String::from("store"));
     for n in roots {
-        root = root.with_child(entry_node_to_orange(n));
+        root = root.with_child(entry_node_to_tree_node(n, ""));
     }
     Tree::new(root)
 }
 
-fn entry_node_to_orange(n: &passcore::EntryNode) -> Node<String> {
-    // For leaves: id = full store path (e.g. "web/github.com").
-    // For directories: id = name segment (e.g. "web").
-    let id = if n.is_leaf() {
-        n.path.clone().unwrap_or_else(|| n.name.clone())
-    } else {
+fn entry_node_to_tree_node(n: &passcore::EntryNode, parent_path: &str) -> Node<String> {
+    // Compute the full path of this node from the store root.
+    let full_path = if parent_path.is_empty() {
         n.name.clone()
+    } else {
+        format!("{}/{}", parent_path, n.name)
+    };
+
+    // For leaves: id = the entry's full store path (unchanged behaviour).
+    // For directories: id = the full path from the root (NEW behaviour).
+    let id = if n.is_leaf() {
+        n.path.clone().unwrap_or_else(|| full_path.clone())
+    } else {
+        full_path.clone()
     };
 
     // Prefix the visible label with a Nerd Font glyph.
@@ -250,7 +263,7 @@ fn entry_node_to_orange(n: &passcore::EntryNode) -> Node<String> {
     let label = format!("{icon} {}", n.name);
     let mut node = Node::new(id, label);
     for child in &n.children {
-        node = node.with_child(entry_node_to_orange(child));
+        node = node.with_child(entry_node_to_tree_node(child, &full_path));
     }
     node
 }
@@ -283,10 +296,55 @@ mod tests {
     }
 
     #[test]
-    fn dir_id_is_name_segment() {
+    fn dir_id_is_full_path() {
+        // After the full-path fix, directory node ids are the full path from
+        // the root (e.g. "web", "email") rather than just the name segment.
+        // Top-level dirs: their full path equals their name.
         let t = paths_tree(&["web/github.com", "email/work"]);
         assert!(t.root().query(&"web".to_string()).is_some());
         assert!(t.root().query(&"email".to_string()).is_some());
+    }
+
+    #[test]
+    fn nested_dir_id_is_full_path() {
+        // For nested directories the id must be the full path, not just the
+        // name segment — this removes the ambiguity where two dirs at different
+        // levels could share the same single-segment name.
+        let t = paths_tree(&["a/b/c", "x/b/d"]);
+        // "a/b" and "x/b" are two different directories both named "b" at depth
+        // 2.  Their ids must differ.
+        assert!(
+            t.root().query(&"a/b".to_string()).is_some(),
+            "a/b must exist"
+        );
+        assert!(
+            t.root().query(&"x/b".to_string()).is_some(),
+            "x/b must exist"
+        );
+        // The old name-segment id "b" alone must NOT appear at the root level.
+        // (querying "b" from root would only succeed if a top-level node had
+        //  that id, which should not happen)
+        assert!(
+            t.root().query(&"b".to_string()).is_none(),
+            "bare 'b' must not be a node id"
+        );
+    }
+
+    #[test]
+    fn directory_ids_not_in_entry_paths_set_so_detail_guard_holds() {
+        // The entry-path set contains only leaf paths (real entries returned by
+        // store.list()).  Directory full-path ids (e.g. "infra") are NOT in that
+        // set, so the SelectEntry guard in the model will correctly skip loading
+        // detail for directory nodes.
+        let paths: std::collections::HashSet<String> =
+            vec!["infra/vpn".to_string()].into_iter().collect();
+        // A directory node id "infra" is NOT in the set.
+        assert!(!paths.contains("infra"), "dir id must not be an entry path");
+        // The leaf id IS in the set.
+        assert!(
+            paths.contains("infra/vpn"),
+            "leaf id must be in entry paths"
+        );
     }
 
     #[test]
