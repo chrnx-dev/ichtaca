@@ -3,7 +3,8 @@
   "productName": "pass-tauri",
   "identifier": "dev.chrnx.pass-tauri",
   "build": {
-    "frontendDist": "./ui-dist"
+    "frontendDist": "ui/dist",
+    "beforeBuildCommand": "npm --prefix ui run build"
   },
   "app": {
     "windows": [
