@@ -15,6 +15,8 @@ pub struct Config {
     pub clipboard: ClipboardConfig,
     /// User-defined entry templates, overriding built-ins by name.
     pub templates: Vec<TemplateConfig>,
+    pub keybindings: KeybindingsConfig,
+    pub ui: UiConfig,
 }
 
 /// A config-defined entry template (suggested keys for new entries).
@@ -36,6 +38,49 @@ impl Default for ClipboardConfig {
     fn default() -> Self {
         Self { clear_after: 45 }
     }
+}
+
+/// Vim-style keybindings for the TUI. Each value is the key character.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct KeybindingsConfig {
+    pub down: String,
+    pub up: String,
+    pub expand: String,
+    pub collapse: String,
+    pub top: String,
+    pub bottom: String,
+    pub search: String,
+    pub command: String,
+    pub copy: String,
+    pub reveal: String,
+    pub quit: String,
+}
+
+impl Default for KeybindingsConfig {
+    fn default() -> Self {
+        Self {
+            down: "j".into(),
+            up: "k".into(),
+            expand: "l".into(),
+            collapse: "h".into(),
+            top: "g".into(),
+            bottom: "G".into(),
+            search: "/".into(),
+            command: ":".into(),
+            copy: "c".into(),
+            reveal: "s".into(),
+            quit: "q".into(),
+        }
+    }
+}
+
+/// UI preferences for the TUI.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct UiConfig {
+    /// Whether the password is revealed by default in the detail panel.
+    pub reveal_default: bool,
 }
 
 impl Config {
@@ -88,5 +133,38 @@ mod tests {
     #[test]
     fn invalid_toml_is_an_error() {
         assert!(Config::from_toml_str("clipboard = [not valid").is_err());
+    }
+
+    #[test]
+    fn keybindings_have_vim_defaults() {
+        let c = Config::default();
+        assert_eq!(c.keybindings.down, "j");
+        assert_eq!(c.keybindings.up, "k");
+        assert_eq!(c.keybindings.expand, "l");
+        assert_eq!(c.keybindings.collapse, "h");
+        assert_eq!(c.keybindings.search, "/");
+        assert_eq!(c.keybindings.copy, "c");
+        assert_eq!(c.keybindings.reveal, "s");
+        assert_eq!(c.keybindings.quit, "q");
+    }
+
+    #[test]
+    fn keybindings_are_overridable_from_toml() {
+        let toml = r#"
+            [keybindings]
+            down = "n"
+            up = "e"
+        "#;
+        let c = Config::from_toml_str(toml).unwrap();
+        assert_eq!(c.keybindings.down, "n");
+        assert_eq!(c.keybindings.up, "e");
+        // unspecified key keeps its default
+        assert_eq!(c.keybindings.quit, "q");
+    }
+
+    #[test]
+    fn ui_defaults_hide_password() {
+        let c = Config::default();
+        assert!(!c.ui.reveal_default);
     }
 }
