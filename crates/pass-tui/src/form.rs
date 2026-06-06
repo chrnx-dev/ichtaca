@@ -100,6 +100,8 @@ impl Form {
     }
 
     /// Return the current value for a named field, if present.
+    // Used by tests and by app.rs (Task 13); allow until the runtime is wired.
+    #[allow(dead_code)]
     pub fn field_value(&self, key: &str) -> Option<&str> {
         self.fields
             .iter()
@@ -108,6 +110,8 @@ impl Form {
     }
 
     /// Update a field value (in place if the key exists, or append a new row).
+    // Used by tests and by app.rs (Task 13); allow until the runtime is wired.
+    #[allow(dead_code)]
     pub fn set_field(&mut self, key: &str, value: &str) {
         if let Some(f) = self.fields.iter_mut().find(|f| f.key == key) {
             f.value = value.to_string();
