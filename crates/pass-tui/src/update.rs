@@ -94,12 +94,72 @@ fn update_browse(state: &mut AppState, action: Action) -> Option<SideEffect> {
     }
 }
 
-/// Placeholder for non-Browse modes; replaced/extended in Tasks 8–11.
 fn update_other(state: &mut AppState, action: Action) -> Option<SideEffect> {
-    if let Action::Cancel = action {
-        state.mode = Mode::Browse;
+    match state.mode.clone() {
+        Mode::Search => update_search(state, action),
+        _ => {
+            if let Action::Cancel = action {
+                state.mode = Mode::Browse;
+            }
+            None
+        }
     }
-    None
+}
+
+fn update_search(state: &mut AppState, action: Action) -> Option<SideEffect> {
+    let all: Vec<String> = flatten_all_paths(state);
+    match action {
+        Action::Input(c) => {
+            state.search.push(c);
+            state.search.recompute(&all);
+            None
+        }
+        Action::Backspace => {
+            state.search.backspace();
+            state.search.recompute(&all);
+            None
+        }
+        Action::Cancel => {
+            state.search.clear();
+            state.mode = Mode::Browse;
+            None
+        }
+        Action::Accept => {
+            // Focus the chosen result: load its detail and return to Browse.
+            let chosen = state.search.selected_path().map(str::to_string);
+            state.mode = Mode::Browse;
+            chosen.map(SideEffect::LoadDetail)
+        }
+        Action::MoveDown => {
+            let len = state.search.results.len();
+            state.search.cursor =
+                crate::tree::move_selection(state.search.cursor, len, crate::tree::Nav::Down);
+            None
+        }
+        Action::MoveUp => {
+            let len = state.search.results.len();
+            state.search.cursor =
+                crate::tree::move_selection(state.search.cursor, len, crate::tree::Nav::Up);
+            None
+        }
+        _ => None,
+    }
+}
+
+/// All leaf paths in the tree, collected into a sorted Vec.
+fn flatten_all_paths(state: &AppState) -> Vec<String> {
+    let mut all = std::collections::BTreeSet::new();
+    collect_paths(&state.roots, &mut all);
+    all.into_iter().collect()
+}
+
+fn collect_paths(nodes: &[passcore::EntryNode], out: &mut std::collections::BTreeSet<String>) {
+    for n in nodes {
+        if let Some(p) = &n.path {
+            out.insert(p.clone());
+        }
+        collect_paths(&n.children, out);
+    }
 }
 
 #[cfg(test)]
@@ -192,5 +252,18 @@ mod tests {
         let mut s = AppState::new();
         update(&mut s, Action::EnterSearch);
         assert_eq!(s.mode, Mode::Search);
+    }
+
+    #[test]
+    fn search_input_recomputes_results_and_accept_loads() {
+        let mut s = state_with_web_expanded();
+        update(&mut s, Action::EnterSearch);
+        update(&mut s, Action::Input('g'));
+        update(&mut s, Action::Input('i'));
+        update(&mut s, Action::Input('t'));
+        assert!(!s.search.results.is_empty());
+        let eff = update(&mut s, Action::Accept);
+        assert_eq!(s.mode, Mode::Browse);
+        assert!(matches!(eff, Some(SideEffect::LoadDetail(_))));
     }
 }

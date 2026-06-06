@@ -5,6 +5,7 @@
 
 mod action;
 mod keymap;
+mod search;
 mod state;
 mod tree;
 mod update;

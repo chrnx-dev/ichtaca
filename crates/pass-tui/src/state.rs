@@ -1,15 +1,12 @@
 //! The pure application state. No ratatui, no crossterm, no terminal here.
 
-// Items in this module are `pub` and consumed by sibling modules added in later
-// tasks.  Suppress dead-code lints so the incremental build stays clippy-clean.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 
 use passcore::{Entry, EntryNode};
 
 /// Which interaction mode the app is in. Drives both keymap and render.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[allow(dead_code)] // EditForm / Confirm / Help wired in Tasks 9–11
 pub enum Mode {
     /// Default: navigate the tree, view the detail panel.
     #[default]
@@ -34,6 +31,7 @@ pub struct Confirm {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Delete used in Task 11 confirm-modal
 pub enum ConfirmKind {
     Delete,
 }
@@ -46,6 +44,7 @@ pub struct Notification {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Info / Error consumed by runtime notify calls (Task 13)
 pub enum NoticeKind {
     Info,
     Error,
@@ -53,6 +52,7 @@ pub enum NoticeKind {
 
 /// The whole app state. Pure data; transitions live in `update.rs`.
 #[derive(Debug, Default)]
+#[allow(dead_code)] // fields read by ui/* and app.rs in later tasks
 pub struct AppState {
     /// The full entry tree (built from `EntryNode::from_paths`).
     pub roots: Vec<EntryNode>,
@@ -72,8 +72,11 @@ pub struct AppState {
     pub notification: Option<Notification>,
     /// Set when the app should exit the event loop.
     pub should_quit: bool,
+    /// Fuzzy search bar state (query + filtered results).
+    pub search: crate::search::SearchState,
 }
 
+#[allow(dead_code)] // new/notify consumed by app.rs in Task 13
 impl AppState {
     pub fn new() -> Self {
         Self {
