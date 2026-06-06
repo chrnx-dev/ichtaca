@@ -41,7 +41,15 @@ fn main() {
 }
 
 fn run() -> io::Result<()> {
-    let config = passcore::Config::load().unwrap_or_default();
+    // Load config; on parse error, fall back to defaults and remember the error
+    // so we can surface it to the user as a notification after the app is built.
+    let (config, config_err) = match passcore::Config::load() {
+        Ok(c) => (c, None),
+        Err(e) => (
+            passcore::Config::default(),
+            Some(format!("config ignored (parse error): {e}")),
+        ),
+    };
 
     // Build the store; on failure, show the help screen instead of crashing.
     let mut app = match passcore::PassCliStore::detect(config.store_dir.clone()) {
@@ -53,6 +61,11 @@ fn run() -> io::Result<()> {
             a
         }
     };
+
+    // Surface config parse errors as a status bar notification.
+    if let Some(msg) = config_err {
+        app.state.notify(msg, NoticeKind::Error);
+    }
 
     let mut terminal = setup_terminal()?;
     install_panic_hook();
