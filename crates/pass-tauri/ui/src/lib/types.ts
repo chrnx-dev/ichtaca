@@ -25,3 +25,25 @@ export interface OtpCode {
   code: string;
   seconds: number;
 }
+
+/**
+ * Input shape for creating a new password entry — mirrors `EntryInput` Rust struct.
+ * Used with the `insert` command.
+ */
+export interface EntryInput {
+  password: string;
+  fields: [string, string][];
+  otp: string | null;
+  tags: string[];
+}
+
+/**
+ * Input shape for updating an existing password entry — mirrors `UpdateInput` Rust struct.
+ * Used with the `update_entry` command. Same shape as `EntryInput`.
+ */
+export interface UpdateInput {
+  password: string;
+  fields: [string, string][];
+  otp: string | null;
+  tags: string[];
+}

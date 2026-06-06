@@ -29,15 +29,14 @@ impl std::fmt::Debug for EntryInput {
 }
 
 /// Form payload from the UI for *updating* an existing entry.
-/// Only `password` and `fields` are accepted — OTP and tags are preserved
-/// unchanged from the existing entry text.
-// NOTE: editing OTP/tags on an existing entry is a Phase-3 prerequisite —
-// it needs passcore `Entry::set_otp`/`set_tags`; until then update preserves
-// the existing otpauth/@tags lines.
+/// `password` is line 1; `fields` are `key: value` rows;
+/// `otp` is an optional `otpauth://` line (None clears it); `tags` replace existing tags.
 #[derive(Deserialize)]
 pub struct UpdateInput {
     pub password: String,
     pub fields: Vec<(String, String)>,
+    pub otp: Option<String>,
+    pub tags: Vec<String>,
 }
 
 impl std::fmt::Debug for UpdateInput {
@@ -45,6 +44,8 @@ impl std::fmt::Debug for UpdateInput {
         f.debug_struct("UpdateInput")
             .field("password", &"<redacted>")
             .field("fields", &self.fields)
+            .field("otp", &"<redacted>")
+            .field("tags", &self.tags)
             .finish()
     }
 }
@@ -63,7 +64,7 @@ fn build_entry_text(input: &EntryInput) -> String {
         let tag_line = input
             .tags
             .iter()
-            .map(|t| format!("@{t}"))
+            .map(|t| format!("@{}", t.trim_start_matches('@')))
             .collect::<Vec<_>>()
             .join(" ");
         lines.push(tag_line);
@@ -91,13 +92,14 @@ pub fn insert_impl(
 
 pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> CommandResult<()> {
     let mut store = state.store.lock().unwrap();
-    // Load existing entry, apply structured changes (preserves unknown lines,
-    // including existing otpauth:// and @tags lines).
+    // Load existing entry, apply structured changes (preserves unknown lines).
     let mut entry = store.show(&path).map_err(CommandError::from)?;
     entry.set_password(&input.password);
     for (k, v) in &input.fields {
         entry.set_field(k, v);
     }
+    entry.set_otp(input.otp.as_deref());
+    entry.set_tags(&input.tags);
     let text = entry.serialize();
     let secret = Secret::from(text.as_str());
     store
@@ -209,6 +211,8 @@ mod tests {
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            otp: None,
+            tags: vec![],
         }
     }
 
@@ -280,12 +284,11 @@ mod tests {
     }
 
     #[test]
-    fn update_entry_preserves_otp_and_note_lines() {
+    fn update_entry_preserves_note_line_when_editing_field() {
+        // Updating only password/fields (otp=None clears otp; tags=[] clears tags),
+        // but an unrelated free-text note line must survive the round-trip.
         let mut store = FakeStore::new();
-        store.seed(
-            "web/site",
-            "pw\nuser: bob\notpauth://totp/x?secret=JBSWY3DPEHPK3PXP\nrandom note\n",
-        );
+        store.seed("web/site", "pw\nuser: bob\nrandom note\n");
         let state = AppState::new(Box::new(store), Config::default());
 
         let input = make_update_input("newpw", vec![("user", "alice")]);
@@ -295,17 +298,96 @@ mod tests {
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("alice"));
-        // OTP line must survive the round-trip.
-        assert!(
-            entry.otp_uri().is_some(),
-            "OTP URI was lost after update; serialized: {:?}",
-            entry.serialize()
-        );
-        // Unknown note line must also survive.
+        // Unknown note line must survive.
         assert!(
             entry.serialize().contains("random note"),
             "note line was lost after update; serialized: {:?}",
             entry.serialize()
+        );
+    }
+
+    #[test]
+    fn update_entry_sets_new_otp() {
+        let mut store = FakeStore::new();
+        store.seed("web/site", "pw\nuser: bob\n");
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = UpdateInput {
+            password: "pw".to_string(),
+            fields: vec![],
+            otp: Some("otpauth://totp/x?secret=NEW".to_string()),
+            tags: vec![],
+        };
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store.lock().unwrap();
+        let entry = store.show("web/site").unwrap();
+        assert_eq!(
+            entry.otp_uri(),
+            Some("otpauth://totp/x?secret=NEW"),
+            "OTP URI not set; serialized: {:?}",
+            entry.serialize()
+        );
+    }
+
+    #[test]
+    fn update_entry_clears_otp() {
+        let mut store = FakeStore::new();
+        store.seed(
+            "web/site",
+            "pw\nuser: bob\notpauth://totp/x?secret=OLD\nrandom note\n",
+        );
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = UpdateInput {
+            password: "pw".to_string(),
+            fields: vec![],
+            otp: None,
+            tags: vec![],
+        };
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store.lock().unwrap();
+        let entry = store.show("web/site").unwrap();
+        assert!(
+            entry.otp_uri().is_none(),
+            "OTP URI should be cleared; serialized: {:?}",
+            entry.serialize()
+        );
+        // Unrelated free-text line must still be present.
+        assert!(
+            entry.serialize().contains("random note"),
+            "note line was lost after clearing OTP; serialized: {:?}",
+            entry.serialize()
+        );
+    }
+
+    #[test]
+    fn update_entry_sets_tags() {
+        let mut store = FakeStore::new();
+        store.seed("web/site", "pw\nuser: bob\n");
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = UpdateInput {
+            password: "pw".to_string(),
+            fields: vec![],
+            otp: None,
+            tags: vec!["work".to_string(), "home".to_string()],
+        };
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store.lock().unwrap();
+        let entry = store.show("web/site").unwrap();
+        let tags = entry.tags();
+        assert!(
+            tags.contains(&"work".to_string()),
+            "missing 'work' tag; tags: {:?}",
+            tags
+        );
+        assert!(
+            tags.contains(&"home".to_string()),
+            "missing 'home' tag; tags: {:?}",
+            tags
         );
     }
 
@@ -377,6 +459,37 @@ mod tests {
     }
 
     // ── generate ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn insert_tags_strip_leading_at_prefix() {
+        // Tags sent as "@work" and "home" must both be stored without double-@.
+        let state = make_state();
+        let input = EntryInput {
+            password: "pw".to_string(),
+            fields: vec![],
+            otp: None,
+            tags: vec!["@work".to_string(), "home".to_string()],
+        };
+        insert_impl(&state, "web/tagged".to_string(), input, false).unwrap();
+        let store = state.store.lock().unwrap();
+        let entry = store.show("web/tagged").unwrap();
+        let text = entry.serialize();
+        assert!(
+            text.contains("@work"),
+            "expected @work in serialized text: {:?}",
+            text
+        );
+        assert!(
+            text.contains("@home"),
+            "expected @home in serialized text: {:?}",
+            text
+        );
+        assert!(
+            !text.contains("@@work"),
+            "double-@ prefix found in serialized text: {:?}",
+            text
+        );
+    }
 
     #[test]
     fn generate_writes_entry_of_requested_length() {

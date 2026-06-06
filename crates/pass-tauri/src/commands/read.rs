@@ -82,6 +82,14 @@ pub fn otp_code_impl(state: &AppState, path: String) -> CommandResult<OtpCode> {
     })
 }
 
+/// Reveal the raw `otpauth://` URI (contains the TOTP secret) — explicit,
+/// per-call, like reveal_password. Returns `None` if the entry has no OTP.
+pub fn reveal_otp_uri_impl(state: &AppState, path: &str) -> CommandResult<Option<String>> {
+    let store = state.store.lock().unwrap();
+    let entry = store.show(path).map_err(CommandError::from)?;
+    Ok(entry.otp_uri().map(|u| u.to_string()))
+}
+
 pub fn search_fuzzy_impl(state: &AppState, query: String) -> CommandResult<Vec<String>> {
     let store = state.store.lock().unwrap();
     let paths = store.list().map_err(CommandError::from)?;
@@ -109,6 +117,11 @@ pub fn reveal_password(state: State<'_, AppState>, path: String) -> CommandResul
 #[tauri::command]
 pub fn otp_code(state: State<'_, AppState>, path: String) -> CommandResult<OtpCode> {
     otp_code_impl(&state, path)
+}
+
+#[tauri::command]
+pub fn reveal_otp_uri(state: State<'_, AppState>, path: String) -> CommandResult<Option<String>> {
+    reveal_otp_uri_impl(&state, &path)
 }
 
 #[tauri::command]
@@ -249,5 +262,31 @@ mod tests {
             !serialized.contains("JBSWY3DPEHPK3PXP"),
             "serialized OtpCode leaks OTP secret: {serialized}"
         );
+    }
+
+    #[test]
+    fn reveal_otp_uri_returns_uri_when_present() {
+        let mut store = FakeStore::new();
+        store.seed(
+            "web/github.com",
+            "pw\notpauth://totp/x?secret=JBSWY3DPEHPK3PXP\n",
+        );
+        let state = AppState::new(Box::new(store), Config::default());
+        let result = reveal_otp_uri_impl(&state, "web/github.com").unwrap();
+        assert!(result.is_some(), "expected Some(uri), got None");
+        let uri = result.unwrap();
+        assert!(
+            uri.contains("otpauth://"),
+            "URI should start with otpauth://; got: {uri}"
+        );
+    }
+
+    #[test]
+    fn reveal_otp_uri_none_when_absent() {
+        let mut store = FakeStore::new();
+        store.seed("email/work", "pw\nuser: alice\n");
+        let state = AppState::new(Box::new(store), Config::default());
+        let result = reveal_otp_uri_impl(&state, "email/work").unwrap();
+        assert!(result.is_none(), "expected None for entry without OTP");
     }
 }

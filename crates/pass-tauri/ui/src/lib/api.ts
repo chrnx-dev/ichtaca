@@ -7,7 +7,7 @@
  * `vi.mock('@tauri-apps/api/core')`.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { EntryMeta, EntryNode, OtpCode } from './types';
+import type { EntryInput, EntryMeta, EntryNode, OtpCode, UpdateInput } from './types';
 
 // ── Command wrappers ──────────────────────────────────────────────────────────
 
@@ -45,6 +45,50 @@ export function otpCode(path: string): Promise<OtpCode> {
 /** Returns paths matching `query` using fuzzy matching. */
 export function searchFuzzy(query: string): Promise<string[]> {
   return invoke('search_fuzzy', { query });
+}
+
+/**
+ * Inserts a new password entry at `path`.
+ * Set `overwrite` to true to overwrite an existing entry (not exposed in the UI by default).
+ */
+export function insert(path: string, input: EntryInput, overwrite: boolean): Promise<void> {
+  return invoke('insert', { path, input, overwrite });
+}
+
+/** Updates an existing password entry at `path`. */
+export function updateEntry(path: string, input: UpdateInput): Promise<void> {
+  return invoke('update_entry', { path, input });
+}
+
+/** Permanently deletes the entry at `path`. */
+export function remove(path: string): Promise<void> {
+  return invoke('remove', { path });
+}
+
+/** Moves/renames the entry from `from` to `to`. */
+export function mv(from: string, to: string): Promise<void> {
+  return invoke('mv', { from, to });
+}
+
+/** Copies the entry from `from` to `to`. */
+export function cp(from: string, to: string): Promise<void> {
+  return invoke('cp', { from, to });
+}
+
+/**
+ * Generates a random password and stores it at `path`.
+ * `len` is the password length; `symbols` includes special characters when true.
+ */
+export function generate(path: string, len: number, symbols: boolean): Promise<void> {
+  return invoke('generate', { path, len, symbols });
+}
+
+/**
+ * Reveals the OTP URI for `path`.
+ * Returns null if the entry has no OTP configured.
+ */
+export function revealOtpUri(path: string): Promise<string | null> {
+  return invoke('reveal_otp_uri', { path });
 }
 
 // ── Tree builder ──────────────────────────────────────────────────────────────
