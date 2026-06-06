@@ -9,11 +9,13 @@ use passcore::Entry;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Template {
     Login,
-    // Consumed by Task 10 (CRUD transitions) and Task 12 (UI template picker).
+    // OAuth/Server/Note/Blank: available for the template picker (Task 14 UI);
+    // not yet constructed outside tests.
     #[allow(dead_code)]
     OAuth,
     #[allow(dead_code)]
     Server,
+    #[allow(dead_code)]
     #[allow(dead_code)]
     Note,
     #[allow(dead_code)]
@@ -42,17 +44,12 @@ pub struct FormField {
 /// unknown lines); for new entries it starts empty.
 #[derive(Debug, Clone)]
 pub struct Form {
-    // `path` and `editing` are used by `update.rs` (Task 10) to build `SideEffect::Save`.
-    // `focus` is used by the form-edit widget (Task 10/12).
-    #[allow(dead_code)]
     pub path: String,
     pub password: String,
     pub fields: Vec<FormField>,
     /// Index of the focused field (0 = password, 1.. = fields).
-    #[allow(dead_code)]
     pub focus: usize,
     /// Whether we are editing an existing entry (drives overwrite + base reuse).
-    #[allow(dead_code)]
     pub editing: bool,
     /// For edits: the original entry, so unknown lines survive.
     base: Option<Entry>,
@@ -100,7 +97,7 @@ impl Form {
     }
 
     /// Return the current value for a named field, if present.
-    // Used by tests and by app.rs (Task 13); allow until the runtime is wired.
+    // Used in tests; the binary path goes through `to_contents` instead.
     #[allow(dead_code)]
     pub fn field_value(&self, key: &str) -> Option<&str> {
         self.fields
@@ -110,7 +107,7 @@ impl Form {
     }
 
     /// Update a field value (in place if the key exists, or append a new row).
-    // Used by tests and by app.rs (Task 13); allow until the runtime is wired.
+    // Used in tests; the form-edit widget in main path routes through Input/Backspace.
     #[allow(dead_code)]
     pub fn set_field(&mut self, key: &str, value: &str) {
         if let Some(f) = self.fields.iter_mut().find(|f| f.key == key) {

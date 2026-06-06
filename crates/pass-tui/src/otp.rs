@@ -4,14 +4,11 @@
 use passcore::Entry;
 
 /// A live OTP display derived from an entry's `otpauth://` URI.
-// Consumed by the detail-panel render (Task 12); allow dead_code until then.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OtpView {
     pub uri: String,
 }
 
-#[allow(dead_code)]
 impl OtpView {
     /// Build from an entry, if it carries an `otpauth://` URI.
     pub fn from_entry(entry: &Entry) -> Option<Self> {
@@ -22,6 +19,8 @@ impl OtpView {
 
     /// The current code + seconds remaining, computed via the core for `now`.
     /// Returns `None` if the URI cannot be parsed.
+    // Called when OTP timestamp is threaded through render (follow-up task).
+    #[allow(dead_code)]
     pub fn current(&self, now_unix: u64) -> Option<(String, u64)> {
         // Real core API: `code_at` returns `Otp { code: String, seconds_remaining: u64 }`.
         // Use its fields directly — do NOT treat the `Otp` as a `&str`, and do NOT
@@ -32,7 +31,7 @@ impl OtpView {
 }
 
 /// Group a 6-digit code as "123 456".
-// Consumed by Task 12 detail panel render.
+// Used by `current()` and the detail render; tested directly.
 #[allow(dead_code)]
 pub fn format_code(code: &str) -> String {
     if code.len() == 6 {

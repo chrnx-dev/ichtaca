@@ -5,7 +5,6 @@
 
 /// A user-intent command. Pure: applying it never does I/O.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum Action {
     Quit,
     MoveUp,
@@ -31,6 +30,8 @@ pub enum Action {
     /// Begin deleting the selected entry (opens a confirm modal).
     BeginDelete,
     /// Generate a password into the focused form field.
+    // Wired via keymap Ctrl-g in Task 14; not yet constructed in the binary path.
+    #[allow(dead_code)]
     GenerateInField,
     /// Confirm the active modal / submit the active form.
     Accept,
@@ -46,7 +47,6 @@ pub enum Action {
 
 /// Something the runtime must do that pure state cannot. Returned by `update`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum SideEffect {
     /// Load and parse the detail for this entry path.
     LoadDetail(String),

@@ -13,8 +13,6 @@ use ratatui::Frame;
 use crate::state::{AppState, Mode};
 
 /// Draw the whole UI for the current state.
-// Called by the event loop in main.rs (Task 14); allow dead_code until wired up.
-#[allow(dead_code)]
 pub fn render(frame: &mut Frame, state: &AppState) {
     let outer = Layout::default()
         .direction(Direction::Vertical)

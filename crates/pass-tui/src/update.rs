@@ -6,8 +6,6 @@ use crate::state::{AppState, Mode};
 use crate::tree::{flatten, move_selection, FlatRow, Nav};
 
 /// Apply an action; return a side effect for the runtime to perform, if any.
-// Called by `app.rs` (Task 13); allow until the runtime is wired up.
-#[allow(dead_code)]
 pub fn update(state: &mut AppState, action: Action) -> Option<SideEffect> {
     state.clear_notification();
     match state.mode.clone() {
