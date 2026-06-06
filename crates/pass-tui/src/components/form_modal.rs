@@ -177,11 +177,13 @@ impl AppComponent<Msg, NoUserEvent> for FormField {
                 modifiers: KeyModifiers::CONTROL,
             }) if self.is_password => Some(Msg::Generate),
 
-            // Normal character input
+            // Normal character input — accept plain chars AND Shift-chars
+            // (uppercase letters and symbols such as !@# arrive with SHIFT set).
+            // Any other modifier combo (CTRL, ALT, etc.) is NOT treated as text.
             Event::Keyboard(KeyEvent {
                 code: Key::Char(ch),
-                modifiers: KeyModifiers::NONE,
-            }) => {
+                modifiers,
+            }) if modifiers.is_empty() || *modifiers == KeyModifiers::SHIFT => {
                 self.perform(Cmd::Type(*ch));
                 Some(Msg::None)
             }
@@ -333,5 +335,69 @@ mod tests {
         }
         f.toggle_reveal();
         assert!(!f.revealed);
+    }
+
+    // ── Fix 1: Shift modifier accepted for uppercase/symbol input ────────────
+
+    /// Shift+letter must type the uppercase character into the input.
+    #[test]
+    fn shift_char_types_uppercase() {
+        let mut f = FormField::new("user", "", false);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('A'),
+            modifiers: KeyModifiers::SHIFT,
+        }));
+        // Should return None (consumed, not a nav message) and the value updated.
+        assert_eq!(msg, Some(Msg::None), "Shift+A must be consumed as text");
+        assert_eq!(f.get_value(), "A", "Shift+A must produce uppercase 'A'");
+    }
+
+    /// Plain lowercase must still work (regression guard).
+    #[test]
+    fn plain_char_still_types() {
+        let mut f = FormField::new("user", "", false);
+        f.on(&Event::Keyboard(KeyEvent::new(
+            Key::Char('a'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(f.get_value(), "a", "plain 'a' must still type");
+    }
+
+    /// Ctrl-g on a password field must still emit Generate, not be treated as text.
+    #[test]
+    fn ctrl_g_on_password_still_generates() {
+        let mut f = FormField::new("password", "", true);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(
+            msg,
+            Some(Msg::Generate),
+            "Ctrl-g on password field must still emit Generate"
+        );
+        // Value must not have 'g' typed in
+        assert_eq!(
+            f.get_value(),
+            "",
+            "Generate must not type a character into the field"
+        );
+    }
+
+    /// Ctrl-g on a NON-password field: NOT Generate AND NOT typed as text.
+    #[test]
+    fn ctrl_g_on_non_password_not_generate_not_text() {
+        let mut f = FormField::new("user", "", false);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_ne!(msg, Some(Msg::Generate), "must not be Generate");
+        // The default _ arm returns None without typing.
+        assert_eq!(
+            f.get_value(),
+            "",
+            "Ctrl-g on non-password must not type a character"
+        );
     }
 }

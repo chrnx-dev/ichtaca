@@ -84,11 +84,14 @@ impl AppComponent<Msg, NoUserEvent> for SearchInput {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Msg::CloseOverlay),
 
-            // Typing — feed into the input and emit SearchChanged
+            // Typing — feed into the input and emit SearchChanged.
+            // Accept plain chars (NONE) AND Shift-chars (SHIFT) so that
+            // uppercase letters and symbols (e.g. !@#) work in the search box.
+            // Any other modifier combo (CTRL, ALT) falls through to the wildcard.
             Event::Keyboard(KeyEvent {
                 code: Key::Char(ch),
-                modifiers: KeyModifiers::NONE,
-            }) => {
+                modifiers,
+            }) if modifiers.is_empty() || *modifiers == KeyModifiers::SHIFT => {
                 let res = self.perform(Cmd::Type(*ch));
                 match res {
                     CmdResult::Changed(State::Single(StateValue::String(q))) => {
@@ -297,6 +300,21 @@ mod tests {
             KeyModifiers::NONE,
         )));
         assert_eq!(msg, Some(Msg::SearchChanged("g".to_string())));
+    }
+
+    /// Fix 1: Shift+letter must also emit SearchChanged with the uppercase char.
+    #[test]
+    fn search_input_shift_char_emits_search_changed() {
+        let mut comp = SearchInput::default();
+        let msg = comp.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('G'),
+            modifiers: KeyModifiers::SHIFT,
+        }));
+        assert_eq!(
+            msg,
+            Some(Msg::SearchChanged("G".to_string())),
+            "Shift+G must produce SearchChanged('G')"
+        );
     }
 
     #[test]
