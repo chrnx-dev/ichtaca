@@ -1,10 +1,6 @@
 //! Flatten the `EntryNode` tree into the visible rows the UI navigates, given
 //! the set of expanded directory paths. Pure: no terminal, no state mutation.
 
-// Items in this module are `pub` and consumed by sibling modules added in later
-// tasks.  Suppress dead-code lints so the incremental build stays clippy-clean.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 
 use passcore::EntryNode;

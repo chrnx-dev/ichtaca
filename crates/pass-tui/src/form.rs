@@ -6,19 +6,18 @@ use passcore::Entry;
 /// Entry templates for seeding new-entry forms with suggested field keys.
 /// This is a local TUI enum; it is intentionally separate from `passcore::Template`
 /// (a struct used for store-level template config).
+///
+/// `Login` is the default for new entries. The other variants are wired into
+/// `template_keys` and tested, but they are not yet selectable from the UI.
+/// TODO(plan-3-followup): template picker UI — wire a number-key or Tab-cycle
+/// template selector into the create flow so all variants become reachable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // OAuth/Server/Note/Blank await the template picker UI
 pub enum Template {
     Login,
-    // OAuth/Server/Note/Blank: available for the template picker (Task 14 UI);
-    // not yet constructed outside tests.
-    #[allow(dead_code)]
     OAuth,
-    #[allow(dead_code)]
     Server,
-    #[allow(dead_code)]
-    #[allow(dead_code)]
     Note,
-    #[allow(dead_code)]
     Blank,
 }
 
@@ -97,8 +96,7 @@ impl Form {
     }
 
     /// Return the current value for a named field, if present.
-    // Used in tests; the binary path goes through `to_contents` instead.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // test helper; binary path reads fields via `to_contents`
     pub fn field_value(&self, key: &str) -> Option<&str> {
         self.fields
             .iter()
@@ -107,8 +105,7 @@ impl Form {
     }
 
     /// Update a field value (in place if the key exists, or append a new row).
-    // Used in tests; the form-edit widget in main path routes through Input/Backspace.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // test helper; binary path routes edits through Input/Backspace actions
     pub fn set_field(&mut self, key: &str, value: &str) {
         if let Some(f) = self.fields.iter_mut().find(|f| f.key == key) {
             f.value = value.to_string();
