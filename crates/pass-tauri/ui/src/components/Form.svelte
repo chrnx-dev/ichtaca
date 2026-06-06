@@ -41,6 +41,10 @@
   let isLoading = $state(false);
   let errorMsg = $state('');
 
+  // ── Show/hide toggles for sensitive fields ────────────────────────────────────
+  let showPassword = $state(false);
+  let showOtp = $state(false);
+
   // ── Local password generator (create form) ────────────────────────────────────
   // Approach: generate password locally in TypeScript for the create flow.
   // The generated value is held in the `password` field and persisted via
@@ -238,11 +242,20 @@
           <input
             id="password-input"
             class="field-input password-input"
-            type="text"
+            type={showPassword ? 'text' : 'password'}
             placeholder="Password"
             bind:value={password}
             data-testid="password-input"
           />
+          <button
+            class="btn-sm"
+            type="button"
+            onclick={() => (showPassword = !showPassword)}
+            data-testid="password-toggle"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
           {#if mode === 'create'}
             <button
               class="btn-sm"
@@ -294,14 +307,25 @@
       <!-- OTP URI -->
       <div class="field-row">
         <label class="field-label" for="otp-input">OTP URI</label>
-        <input
-          id="otp-input"
-          class="field-input"
-          type="text"
-          placeholder="otpauth://totp/…  (optional)"
-          bind:value={otp}
-          data-testid="otp-input"
-        />
+        <div class="password-row">
+          <input
+            id="otp-input"
+            class="field-input"
+            type={showOtp ? 'text' : 'password'}
+            placeholder="otpauth://totp/…  (optional)"
+            bind:value={otp}
+            data-testid="otp-input"
+          />
+          <button
+            class="btn-sm"
+            type="button"
+            onclick={() => (showOtp = !showOtp)}
+            data-testid="otp-toggle"
+            aria-label={showOtp ? 'Hide OTP URI' : 'Show OTP URI'}
+          >
+            {showOtp ? 'Hide' : 'Show'}
+          </button>
+        </div>
       </div>
 
       <!-- Tags -->

@@ -463,3 +463,151 @@ describe('Form (create) — generatePasswordLocally', () => {
     }
   });
 });
+
+// ── Password show/hide toggle ─────────────────────────────────────────────────
+
+describe('Form — password show/hide toggle', () => {
+  it('password input defaults to type="password" (masked)', () => {
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    const passwordInput = getByTestId('password-input') as HTMLInputElement;
+    expect(passwordInput.type).toBe('password');
+  });
+
+  it('clicking the show toggle reveals the password (type becomes "text")', async () => {
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    const passwordInput = getByTestId('password-input') as HTMLInputElement;
+    const toggle = getByTestId('password-toggle');
+
+    expect(passwordInput.type).toBe('password');
+    await fireEvent.click(toggle);
+    expect(passwordInput.type).toBe('text');
+  });
+
+  it('clicking the show toggle a second time re-masks the password', async () => {
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    const passwordInput = getByTestId('password-input') as HTMLInputElement;
+    const toggle = getByTestId('password-toggle');
+
+    await fireEvent.click(toggle);
+    expect(passwordInput.type).toBe('text');
+    await fireEvent.click(toggle);
+    expect(passwordInput.type).toBe('password');
+  });
+
+  it('toggling visibility does NOT affect the value sent to insert', async () => {
+    mockInsert.mockResolvedValueOnce(undefined);
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(getByTestId('path-input'), { target: { value: 'web/toggle-test' } });
+    await fireEvent.input(getByTestId('password-input'), { target: { value: 'secretvalue' } });
+
+    // Toggle show and hide before saving
+    const toggle = getByTestId('password-toggle');
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        'web/toggle-test',
+        expect.objectContaining({ password: 'secretvalue' }),
+        false
+      );
+    });
+  });
+});
+
+// ── OTP show/hide toggle ──────────────────────────────────────────────────────
+
+describe('Form — OTP show/hide toggle', () => {
+  it('OTP input defaults to type="password" (masked)', () => {
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    const otpInput = getByTestId('otp-input') as HTMLInputElement;
+    expect(otpInput.type).toBe('password');
+  });
+
+  it('clicking the OTP show toggle reveals the URI (type becomes "text")', async () => {
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    const otpInput = getByTestId('otp-input') as HTMLInputElement;
+    const toggle = getByTestId('otp-toggle');
+
+    expect(otpInput.type).toBe('password');
+    await fireEvent.click(toggle);
+    expect(otpInput.type).toBe('text');
+    await fireEvent.click(toggle);
+    expect(otpInput.type).toBe('password');
+  });
+
+  it('toggling OTP visibility does NOT affect the value sent to insert', async () => {
+    mockInsert.mockResolvedValueOnce(undefined);
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(getByTestId('path-input'), { target: { value: 'web/otp-toggle-test' } });
+    await fireEvent.input(getByTestId('password-input'), { target: { value: 'pw' } });
+    await fireEvent.input(getByTestId('otp-input'), { target: { value: 'otpauth://totp/Test?secret=ABCDEF' } });
+
+    const otpToggle = getByTestId('otp-toggle');
+    await fireEvent.click(otpToggle);
+    await fireEvent.click(otpToggle);
+
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        'web/otp-toggle-test',
+        expect.objectContaining({ otp: 'otpauth://totp/Test?secret=ABCDEF' }),
+        false
+      );
+    });
+  });
+});
