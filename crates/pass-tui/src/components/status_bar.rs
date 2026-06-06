@@ -16,6 +16,7 @@ use tuirealm::state::State;
 
 use crate::msg::Msg;
 use crate::theme;
+use crate::theme::icons;
 
 /// Hint/status bar shown at the bottom of the window.
 pub struct StatusBar {
@@ -62,7 +63,7 @@ impl Default for StatusBar {
             Span::styled(" reveal", Style::default().fg(theme::MUTED)),
             Span::raw("  "),
             Span::styled(
-                "/",
+                format!("/ {}", icons::SEARCH),
                 Style::default()
                     .fg(theme::GOLD)
                     .add_modifier(TextModifiers::BOLD),
