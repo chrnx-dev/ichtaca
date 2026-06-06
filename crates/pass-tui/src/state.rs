@@ -74,6 +74,8 @@ pub struct AppState {
     pub should_quit: bool,
     /// Fuzzy search bar state (query + filtered results).
     pub search: crate::search::SearchState,
+    /// The active create/edit form, if any.
+    pub form: Option<crate::form::Form>,
 }
 
 #[allow(dead_code)] // new/notify consumed by app.rs in Task 13
