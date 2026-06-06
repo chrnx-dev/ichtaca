@@ -27,6 +27,15 @@ fn single(s: &str) -> Option<char> {
 }
 
 fn map_browse(ev: KeyEvent, kb: &KeybindingsConfig) -> Action {
+    // Arrow keys always work alongside the configurable vim bindings:
+    // ↑/↓ navigate, →/← expand/collapse.
+    match ev.code {
+        KeyCode::Down => return Action::MoveDown,
+        KeyCode::Up => return Action::MoveUp,
+        KeyCode::Right => return Action::Expand,
+        KeyCode::Left => return Action::Collapse,
+        _ => {}
+    }
     let c = match ev.code {
         KeyCode::Char(c) => c,
         _ => return Action::Noop,
@@ -137,6 +146,25 @@ mod tests {
         assert_eq!(map(key('l'), &Mode::Browse, &kb), Action::Expand);
         assert_eq!(map(key('g'), &Mode::Browse, &kb), Action::MoveTop);
         assert_eq!(map(key('G'), &Mode::Browse, &kb), Action::MoveBottom);
+    }
+
+    #[test]
+    fn browse_arrow_keys_navigate_and_fold() {
+        let kb = KeybindingsConfig::default();
+        let arrow = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        assert_eq!(
+            map(arrow(KeyCode::Down), &Mode::Browse, &kb),
+            Action::MoveDown
+        );
+        assert_eq!(map(arrow(KeyCode::Up), &Mode::Browse, &kb), Action::MoveUp);
+        assert_eq!(
+            map(arrow(KeyCode::Right), &Mode::Browse, &kb),
+            Action::Expand
+        );
+        assert_eq!(
+            map(arrow(KeyCode::Left), &Mode::Browse, &kb),
+            Action::Collapse
+        );
     }
 
     #[test]
