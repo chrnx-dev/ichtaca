@@ -11,6 +11,7 @@ mod keymap;
 mod otp;
 mod search;
 mod state;
+mod theme;
 mod tree;
 mod ui;
 mod update;
