@@ -35,6 +35,9 @@ pub enum Msg {
     // ── Phase 3 (modals + CRUD) ───────────────────────────────────────────
     /// Open the search modal.
     OpenSearch,
+    // ── Phase 4: template picker ──────────────────────────────────────────
+    /// User confirmed a template index in the template-pick modal.
+    SelectTemplate(usize),
     /// Search query changed.
     SearchChanged(String),
     /// User picked a search result.

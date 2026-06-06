@@ -68,16 +68,19 @@ impl FormField {
         } else {
             InputType::Text
         };
+        // Active (focused) border: gold.  Inactive: muted.
+        // tui-realm uses `.borders(…)` for the focused border colour and
+        // `.inactive(…)` for the unfocused style (entire widget dimmed).
         let inner = TuiInput::default()
             .background(theme::SURFACE)
             .foreground(theme::TEXT)
             .borders(
                 Borders::default()
-                    .color(theme::MUTED)
+                    .color(theme::GOLD)
                     .modifiers(BorderType::Rounded),
             )
-            .inactive(Style::default().fg(theme::MUTED))
-            .title(Title::from(label.to_string()).alignment(HorizontalAlignment::Left))
+            .inactive(Style::default().fg(theme::MUTED).bg(theme::SURFACE))
+            .title(Title::from(format!(" {label} ")).alignment(HorizontalAlignment::Left))
             .input_type(itype)
             .value(initial);
 

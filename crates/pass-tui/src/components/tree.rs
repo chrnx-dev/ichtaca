@@ -7,6 +7,15 @@
 //! - `CmdResult::Submit` after Enter → `Msg::SelectEntry(id)` (id == store path
 //!   for leaf nodes, directory id for folder nodes — the model ignores dirs)
 //! - Move/fold keys also emit `Msg::None` so the main loop redraws.
+//!
+//! ## Config-driven keybindings (DEFERRED)
+//!
+//! `passcore::Config.keybindings` allows overriding j/k/h/l/c/s/q and other
+//! keys.  Currently the keys in the `on()` match are **hardcoded** to the
+//! default vim values.  Wiring them through would require passing a
+//! `KeybindingsConfig` reference into the component at construction time (and
+//! rebuilding the match as a dynamic comparison), which is left as a follow-up
+//! task.  The arrow keys (↑↓←→) always work regardless of this setting.
 
 use tui_realm_treeview::{Node, Tree, TreeView, TREE_CMD_CLOSE, TREE_CMD_OPEN};
 use tuirealm::command::{Cmd, CmdResult, Direction, Position};

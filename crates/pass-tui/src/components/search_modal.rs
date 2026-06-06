@@ -45,8 +45,8 @@ impl Default for SearchInput {
                     .color(theme::GOLD)
                     .modifiers(BorderType::Rounded),
             )
-            .inactive(Style::default().fg(theme::MUTED))
-            .title(Title::from("Search").alignment(HorizontalAlignment::Left))
+            .inactive(Style::default().fg(theme::MUTED).bg(theme::SURFACE))
+            .title(Title::from(" > Query ").alignment(HorizontalAlignment::Left))
             .input_type(InputType::Text);
 
         Self { inner }
@@ -159,7 +159,7 @@ impl Default for SearchResults {
                     .color(theme::MUTED)
                     .modifiers(BorderType::Rounded),
             )
-            .inactive(Style::default().fg(theme::MUTED))
+            .inactive(Style::default().fg(theme::MUTED).bg(theme::SURFACE))
             .highlight_style(theme::selection())
             .highlight_str("▸")
             .scroll(true)

@@ -70,6 +70,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         form: FormState::default(),
         search_results: Vec::new(),
         search_query: String::new(),
+        pending_raw_edit: None,
     };
     model.mount_phase1();
     model.mount_phase2();
@@ -149,6 +150,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+        }
+
+        // ── Raw-edit suspension ───────────────────────────────────────────
+        // `Msg::OpenRawEdit` sets `model.pending_raw_edit` instead of calling
+        // the store directly, so the terminal can be cleanly suspended here,
+        // outside the borrow of the Application tick.
+        if let Some(path) = model.pending_raw_edit.take() {
+            // Suspend: leave alternate screen and disable raw mode so the
+            // external $EDITOR gets a clean terminal.
+            terminal.leave_alternate_screen().ok();
+            terminal.disable_raw_mode().ok();
+
+            // Let the store call $EDITOR (via `pass edit`).
+            model.finish_raw_edit(&path);
+
+            // Restore: re-enter raw mode and alternate screen.
+            terminal.enable_raw_mode().ok();
+            terminal.enter_alternate_screen().ok();
+
+            // Force a full redraw so the TUI repaints over the editor output.
+            model.redraw = true;
         }
 
         if model.quit {

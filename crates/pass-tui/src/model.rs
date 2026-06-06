@@ -16,7 +16,7 @@ use tuirealm::terminal::TerminalAdapter;
 
 use crate::components::{
     ConfirmModal, Detail, EntryTree, FormField, FormMode, Header, SearchInput, SearchResults,
-    StatusBar,
+    StatusBar, TemplateModal,
 };
 use crate::id::Id;
 use crate::msg::Msg;
@@ -29,6 +29,8 @@ use crate::theme;
 pub enum Overlay {
     None,
     Search,
+    /// Template-pick step shown before the Create form.
+    TemplatePick,
     /// Create or Edit form.
     Form(FormMode),
     Confirm,
@@ -102,6 +104,12 @@ pub struct Model {
     pub search_results: Vec<String>,
     /// Current search query.
     pub search_query: String,
+
+    // ── Phase 4: raw-edit suspension ─────────────────────────────────────────
+    /// When set, the main loop suspends the TUI, calls `store.edit` on this
+    /// path, then restores the TUI.  Set by `Msg::OpenRawEdit`; cleared by the
+    /// main loop after the editor returns.
+    pub pending_raw_edit: Option<String>,
 }
 
 impl Model {
@@ -213,21 +221,46 @@ impl Model {
         match overlay {
             Overlay::None => {}
 
+            Overlay::TemplatePick => {
+                // Template picker: 55% wide, auto height (uses list component border)
+                let popup = centered_rect(area, 55, 55);
+                if app.mounted(&Id::FormTemplate) {
+                    app.view(&Id::FormTemplate, f, popup);
+                }
+            }
+
             Overlay::Search => {
-                // Search popup: 50% wide, top 40% of screen
+                // Search popup: 60% wide, 50% tall, centred.
                 let popup = centered_rect(area, 60, 50);
+
+                // Gold-bordered panel so the modal looks intentional.
+                let search_block = tuirealm::ratatui::widgets::Block::default()
+                    .style(
+                        tuirealm::ratatui::style::Style::default()
+                            .bg(theme::SURFACE)
+                            .fg(theme::TEXT),
+                    )
+                    .borders(tuirealm::ratatui::widgets::Borders::ALL)
+                    .border_style(tuirealm::ratatui::style::Style::default().fg(theme::GOLD))
+                    .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
+                    .title(tuirealm::ratatui::text::Line::from(
+                        tuirealm::ratatui::text::Span::styled(
+                            " Search  [↑↓ navigate · Enter pick · Esc close] ",
+                            tuirealm::ratatui::style::Style::default()
+                                .fg(theme::GOLD)
+                                .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                        ),
+                    ));
+                let inner = search_block.inner(popup);
+                f.render_widget(search_block, popup);
+
                 let parts = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
-                        Constraint::Length(3), // Input
+                        Constraint::Length(3), // Input field (with its own border)
                         Constraint::Fill(1),   // Results list
                     ])
-                    .split(popup);
-
-                // Render dim background for the popup
-                let popup_bg = tuirealm::ratatui::widgets::Block::default()
-                    .style(tuirealm::ratatui::style::Style::default().bg(theme::SURFACE));
-                f.render_widget(popup_bg, popup);
+                    .split(inner);
 
                 if app.mounted(&Id::SearchInput) {
                     app.view(&Id::SearchInput, f, parts[0]);
@@ -237,51 +270,98 @@ impl Model {
                 }
             }
 
-            Overlay::Form(_mode) => {
+            Overlay::Form(mode) => {
                 // Form popup: 70% wide, 80% tall
                 let popup = centered_rect(area, 70, 80);
-                let popup_bg = tuirealm::ratatui::widgets::Block::default()
-                    .style(tuirealm::ratatui::style::Style::default().bg(theme::SURFACE));
-                f.render_widget(popup_bg, popup);
 
-                // Each form field gets 3 rows (border + content).
+                // Gold-bordered surface panel for the form.
+                let form_title = match mode {
+                    FormMode::Create => " New Entry  [Enter save · Esc cancel · Ctrl-g generate] ",
+                    FormMode::Edit => " Edit Entry  [Enter save · Esc cancel · Ctrl-g generate] ",
+                };
+                let popup_block = tuirealm::ratatui::widgets::Block::default()
+                    .style(
+                        tuirealm::ratatui::style::Style::default()
+                            .bg(theme::SURFACE)
+                            .fg(theme::TEXT),
+                    )
+                    .borders(tuirealm::ratatui::widgets::Borders::ALL)
+                    .border_style(tuirealm::ratatui::style::Style::default().fg(theme::GOLD))
+                    .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
+                    .title(tuirealm::ratatui::text::Line::from(
+                        tuirealm::ratatui::text::Span::styled(
+                            form_title,
+                            tuirealm::ratatui::style::Style::default()
+                                .fg(theme::GOLD)
+                                .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                        ),
+                    ));
+                let inner_area = popup_block.inner(popup);
+                f.render_widget(popup_block, popup);
+
+                // Error banner (1 line) + field rows (3 lines each).
                 let num_fields = form.field_count();
-                let field_constraints: Vec<Constraint> =
-                    (0..num_fields).map(|_| Constraint::Length(3)).collect();
+                let error_height = if form.error.is_some() { 1u16 } else { 0 };
+                let mut constraints: Vec<Constraint> = Vec::new();
+                if error_height > 0 {
+                    constraints.push(Constraint::Length(error_height));
+                }
+                constraints.extend((0..num_fields).map(|_| Constraint::Length(3)));
+                // Add a spacer so fields don't stretch to fill the panel.
+                constraints.push(Constraint::Fill(1));
 
                 let parts = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints(field_constraints)
-                    .split(popup);
+                    .constraints(constraints)
+                    .split(inner_area);
+
+                let field_offset = if error_height > 0 { 1usize } else { 0 };
+
+                // Error banner in cochineal.
+                if let Some(err) = &form.error {
+                    use tuirealm::ratatui::text::{Line, Span};
+                    use tuirealm::ratatui::widgets::Paragraph;
+                    let err_widget = Paragraph::new(Line::from(Span::styled(
+                        format!(" ⚠  {err}"),
+                        tuirealm::ratatui::style::Style::default()
+                            .fg(theme::COCHINEAL)
+                            .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                    )));
+                    f.render_widget(err_widget, parts[0]);
+                }
 
                 // Render path field (always index 0)
                 if app.mounted(&Id::FormField(0)) {
-                    app.view(&Id::FormField(0), f, parts[0]);
+                    app.view(&Id::FormField(0), f, parts[field_offset]);
                 }
                 // Render password field (always index 1)
                 if app.mounted(&Id::FormField(1)) {
-                    app.view(&Id::FormField(1), f, parts[1]);
+                    app.view(&Id::FormField(1), f, parts[field_offset + 1]);
                 }
                 // Render key/value pairs (fields 2..2+n*2)
                 let base = 2usize;
                 for i in 0..form.fields.len() {
                     let key_idx = base + i * 2;
                     let val_idx = base + i * 2 + 1;
-                    if app.mounted(&Id::FormField(key_idx)) && val_idx < parts.len() {
-                        app.view(&Id::FormField(key_idx), f, parts[key_idx]);
+                    let key_part = field_offset + key_idx;
+                    let val_part = field_offset + val_idx;
+                    if app.mounted(&Id::FormField(key_idx)) && key_part < parts.len() {
+                        app.view(&Id::FormField(key_idx), f, parts[key_part]);
                     }
-                    if app.mounted(&Id::FormField(val_idx)) && val_idx < parts.len() {
-                        app.view(&Id::FormField(val_idx), f, parts[val_idx]);
+                    if app.mounted(&Id::FormField(val_idx)) && val_part < parts.len() {
+                        app.view(&Id::FormField(val_idx), f, parts[val_part]);
                     }
                 }
                 // OTP and tags
                 let otp_idx = base + form.fields.len() * 2;
                 let tags_idx = otp_idx + 1;
-                if app.mounted(&Id::FormField(otp_idx)) && otp_idx < parts.len() {
-                    app.view(&Id::FormField(otp_idx), f, parts[otp_idx]);
+                let otp_part = field_offset + otp_idx;
+                let tags_part = field_offset + tags_idx;
+                if app.mounted(&Id::FormField(otp_idx)) && otp_part < parts.len() {
+                    app.view(&Id::FormField(otp_idx), f, parts[otp_part]);
                 }
-                if app.mounted(&Id::FormField(tags_idx)) && tags_idx < parts.len() {
-                    app.view(&Id::FormField(tags_idx), f, parts[tags_idx]);
+                if app.mounted(&Id::FormField(tags_idx)) && tags_part < parts.len() {
+                    app.view(&Id::FormField(tags_idx), f, parts[tags_part]);
                 }
             }
 
@@ -424,9 +504,17 @@ impl Model {
                 None
             }
 
-            // ── Phase 3: Create ───────────────────────────────────────────────
+            // ── Phase 4: Create — open template picker first ─────────────────
             Some(Msg::OpenCreate) => {
-                self.open_create_form();
+                self.open_template_pick();
+                self.redraw = true;
+                None
+            }
+
+            // Template selected from the picker — open the create form.
+            Some(Msg::SelectTemplate(idx)) => {
+                self.close_overlay(); // close template picker
+                self.open_create_form_with_template(idx);
                 self.redraw = true;
                 None
             }
@@ -440,12 +528,16 @@ impl Model {
                 None
             }
 
-            // ── Phase 3: Raw edit ─────────────────────────────────────────────
+            // ── Phase 4: Raw edit — set pending flag so the main loop can
+            // suspend the TUI before handing control to $EDITOR.
             Some(Msg::OpenRawEdit) => {
                 if let Some(path) = self.selected_path.clone() {
-                    self.do_raw_edit(&path);
+                    // Signal the main loop; actual store.edit happens there
+                    // after terminal raw-mode is disabled.
+                    self.pending_raw_edit = Some(path);
+                    // Don't set redraw here — main loop will force a full
+                    // redraw after the editor returns.
                 }
-                self.redraw = true;
                 None
             }
 
@@ -678,6 +770,9 @@ impl Model {
                 let _ = self.app.umount(&Id::SearchInput);
                 let _ = self.app.umount(&Id::SearchResults);
             }
+            Overlay::TemplatePick => {
+                let _ = self.app.umount(&Id::FormTemplate);
+            }
             Overlay::Form(_) => {
                 // Unmount all form fields
                 let count = self.form.field_count();
@@ -694,10 +789,27 @@ impl Model {
         self.form = FormState::default();
     }
 
-    fn open_create_form(&mut self) {
+    /// Open the template-pick modal (step 1 of create).
+    fn open_template_pick(&mut self) {
+        let templates = passcore::Template::resolve(&self.config);
+        if !self.app.mounted(&Id::FormTemplate) {
+            self.app
+                .mount(
+                    Id::FormTemplate,
+                    Box::new(TemplateModal::new(&templates)),
+                    vec![],
+                )
+                .expect("mount TemplateModal");
+        }
+        self.overlay = Overlay::TemplatePick;
+        let _ = self.app.active(&Id::FormTemplate);
+    }
+
+    /// Open the create form pre-filled with the template at `tpl_idx`.
+    fn open_create_form_with_template(&mut self, tpl_idx: usize) {
         let templates = passcore::Template::resolve(&self.config);
         let tpl = templates
-            .first()
+            .get(tpl_idx)
             .cloned()
             .unwrap_or_else(passcore::Template::default_template);
         // Build initial fields from the template
@@ -715,7 +827,7 @@ impl Model {
             focus_idx: 0,
             pw_revealed: false,
             error: None,
-            template_idx: 0,
+            template_idx: tpl_idx,
         };
         self.overlay = Overlay::Form(FormMode::Create);
         self.mount_form_fields(FormMode::Create);
@@ -946,8 +1058,12 @@ impl Model {
         Ok(())
     }
 
-    /// Raw editor: suspend terminal, call `store.edit`, restore terminal.
-    fn do_raw_edit(&mut self, path: &str) {
+    /// Call `store.edit` after the main loop has suspended the terminal.
+    ///
+    /// This must only be called from the main loop, **after** raw mode and
+    /// alternate screen have been disabled.  The main loop re-enters them and
+    /// calls `force_redraw` afterwards.
+    pub fn finish_raw_edit(&mut self, path: &str) {
         match self.store.edit(path) {
             Ok(()) => {
                 self.notice = Some(format!("editor closed for {path}"));
@@ -1081,6 +1197,7 @@ mod tests {
             form: FormState::default(),
             search_results: Vec::new(),
             search_query: String::new(),
+            pending_raw_edit: None,
         }
     }
 
@@ -1366,6 +1483,51 @@ mod tests {
         assert!(blank.fields.is_empty());
     }
 
+    #[test]
+    fn open_create_opens_template_picker_first() {
+        let model = &mut test_model(FakeStore::new());
+        model.update(Some(Msg::OpenCreate));
+        assert_eq!(
+            model.overlay,
+            Overlay::TemplatePick,
+            "OpenCreate must show the template-picker overlay"
+        );
+    }
+
+    #[test]
+    fn select_template_login_opens_form_with_user_url_fields() {
+        let model = &mut test_model(FakeStore::new());
+        // Skip the template picker step: send SelectTemplate(0) = Login directly.
+        model.update(Some(Msg::SelectTemplate(0)));
+        assert_eq!(
+            model.overlay,
+            Overlay::Form(FormMode::Create),
+            "SelectTemplate must open the create form"
+        );
+        // Login template fields: user + url
+        let keys: Vec<&str> = model.form.fields.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"user"), "Login template must pre-fill user");
+        assert!(keys.contains(&"url"), "Login template must pre-fill url");
+    }
+
+    #[test]
+    fn select_template_blank_opens_form_with_no_fields() {
+        let model = &mut test_model(FakeStore::new());
+        // Blank is template index 4 in the default set.
+        let templates = passcore::Template::resolve(&passcore::Config::default());
+        let blank_idx = templates.iter().position(|t| t.name == "Blank").unwrap();
+        model.update(Some(Msg::SelectTemplate(blank_idx)));
+        assert_eq!(
+            model.overlay,
+            Overlay::Form(FormMode::Create),
+            "SelectTemplate(Blank) must open the create form"
+        );
+        assert!(
+            model.form.fields.is_empty(),
+            "Blank template must produce no pre-filled key fields"
+        );
+    }
+
     // ── Phase-3: edit ─────────────────────────────────────────────────────────
 
     #[test]
@@ -1509,6 +1671,42 @@ mod tests {
             "entry must survive a cancelled delete"
         );
         assert_eq!(model.overlay, Overlay::None, "overlay must still close");
+    }
+
+    // ── Phase-4: raw-edit suspension ─────────────────────────────────────
+
+    #[test]
+    fn open_raw_edit_sets_pending_flag_not_store_mutation() {
+        let mut store = FakeStore::new();
+        store.seed("web/x", "original\n");
+        let mut model = test_model(store);
+        model.selected_path = Some("web/x".to_string());
+
+        // OpenRawEdit must set the pending flag, NOT call store.edit.
+        model.update(Some(Msg::OpenRawEdit));
+
+        assert_eq!(
+            model.pending_raw_edit.as_deref(),
+            Some("web/x"),
+            "OpenRawEdit must set pending_raw_edit to the selected path"
+        );
+        // Store must be unchanged (editor has not been called yet).
+        let entry = model.store.show("web/x").unwrap();
+        assert_eq!(
+            entry.password(),
+            "original",
+            "store must not be mutated when pending flag is set"
+        );
+    }
+
+    #[test]
+    fn open_raw_edit_without_selection_sets_no_flag() {
+        let model = &mut test_model(FakeStore::new());
+        model.update(Some(Msg::OpenRawEdit));
+        assert!(
+            model.pending_raw_edit.is_none(),
+            "pending_raw_edit must remain None when no entry is selected"
+        );
     }
 
     // ── Phase-3: generate ─────────────────────────────────────────────────────
