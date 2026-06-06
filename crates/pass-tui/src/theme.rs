@@ -24,6 +24,9 @@ pub const TEXT: Color = Color::Rgb(232, 226, 208);
 /// Muted tone for borders, hints, and field labels.
 pub const MUTED: Color = Color::Rgb(107, 100, 120);
 
+/// Brighter muted — readable hint labels (more legible than MUTED on obsidian).
+pub const MUTED_BRIGHT: Color = Color::Rgb(154, 146, 168);
+
 /// Gold — primary accent: selection highlight, titles, brand.
 pub const GOLD: Color = Color::Rgb(224, 164, 54);
 
@@ -85,6 +88,16 @@ pub fn error() -> Style {
 /// Inline hint text: muted.
 pub fn hint() -> Style {
     Style::default().fg(MUTED)
+}
+
+/// Status-bar hint: the key itself (e.g. `c`, `↑↓`) — gold + bold so it pops.
+pub fn hint_key() -> Style {
+    Style::default().fg(GOLD).add_modifier(Modifier::BOLD)
+}
+
+/// Status-bar hint: the action label after a key — readable, not opaque.
+pub fn hint_label() -> Style {
+    Style::default().fg(MUTED_BRIGHT)
 }
 
 /// Success / info notices: jade.
