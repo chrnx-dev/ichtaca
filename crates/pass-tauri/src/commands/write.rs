@@ -9,12 +9,23 @@ use crate::state::AppState;
 /// Form payload from the UI for *inserting* a new entry.
 /// `password` is line 1; `fields` are `key: value` rows;
 /// `otp` is an optional `otpauth://` line; `tags` join as `@a @b`.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct EntryInput {
     pub password: String,
     pub fields: Vec<(String, String)>,
     pub otp: Option<String>,
     pub tags: Vec<String>,
+}
+
+impl std::fmt::Debug for EntryInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntryInput")
+            .field("password", &"<redacted>")
+            .field("fields", &self.fields)
+            .field("otp", &self.otp)
+            .field("tags", &self.tags)
+            .finish()
+    }
 }
 
 /// Form payload from the UI for *updating* an existing entry.
@@ -23,10 +34,19 @@ pub struct EntryInput {
 // NOTE: editing OTP/tags on an existing entry is a Phase-3 prerequisite —
 // it needs passcore `Entry::set_otp`/`set_tags`; until then update preserves
 // the existing otpauth/@tags lines.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct UpdateInput {
     pub password: String,
     pub fields: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for UpdateInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpdateInput")
+            .field("password", &"<redacted>")
+            .field("fields", &self.fields)
+            .finish()
+    }
 }
 
 /// Build entry text from scratch (used by `insert`).
