@@ -1,7 +1,7 @@
 //! pass-tui — Ichtaca TUI frontend (tui-realm edition).
 //!
-//! Phase 2: Tree panel (treeview) + Detail panel (fields / masked password /
-//! OTP with tick refresh / tags / copy) on top of the Phase-1 themed frame.
+//! Phase 3: search modal, create/edit form modal, delete confirm, raw edit,
+//! and tree refresh after writes — on top of the Phase-2 browse stack.
 
 mod components;
 mod domain;
@@ -19,7 +19,7 @@ use tuirealm::subscription::{EventClause, Sub, SubClause};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter};
 
 use id::Id;
-use model::Model;
+use model::{FormState, Model, Overlay};
 use msg::Msg;
 
 fn main() {
@@ -66,12 +66,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         detail_entry: None,
         reveal: false,
         notice: None,
+        overlay: Overlay::None,
+        form: FormState::default(),
+        search_results: Vec::new(),
+        search_query: String::new(),
     };
     model.mount_phase1();
     model.mount_phase2();
 
     // ── Global subscriptions ─────────────────────────────────────────────────
-    // StatusBar handles q/Esc/Ctrl-C as quit; Tree handles c, s, and navigation.
+    // StatusBar handles q/Esc/Ctrl-C as quit; Tree handles c, s, navigation,
+    // and the new Phase-3 keys (/, a, e, E, d).
     // We also subscribe Tree to the Tick event for OTP refresh.
 
     // q — quit (global fallback via StatusBar)
@@ -86,7 +91,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .ok();
 
-    // Esc — quit
+    // Esc — quit (when no overlay is open)
     model
         .app
         .subscribe(

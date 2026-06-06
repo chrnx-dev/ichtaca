@@ -159,6 +159,32 @@ impl AppComponent<Msg, NoUserEvent> for EntryTree {
                 modifiers: KeyModifiers::NONE,
             }) => return Some(Msg::ToggleReveal),
 
+            // ── Phase 3 CRUD keys ─────────────────────────────────────────
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('/'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::OpenSearch),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::OpenCreate),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('e'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::OpenEdit),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('E'),
+                modifiers: KeyModifiers::SHIFT,
+            }) => return Some(Msg::OpenRawEdit),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::NONE,
+            }) => return Some(Msg::AskDelete),
+
             // Tick — used to refresh the OTP countdown in the Detail panel.
             Event::Tick => return Some(Msg::Tick),
 
