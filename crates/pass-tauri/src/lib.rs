@@ -30,6 +30,7 @@ pub fn run() {
             commands::read::list,
             commands::read::show_meta,
             commands::read::reveal_password,
+            commands::read::reveal_otp_uri,
             commands::read::otp_code,
             commands::read::search_fuzzy,
             commands::write::insert,
