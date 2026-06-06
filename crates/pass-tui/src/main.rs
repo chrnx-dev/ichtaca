@@ -1,38 +1,25 @@
-//! pass-tui — a ratatui terminal frontend for `pass`, consuming `passcore`.
+//! pass-tui — Ichtaca TUI frontend (tui-realm edition).
 //!
-//! This file is terminal glue only (untestable by design). Every decision —
-//! input mapping, state transitions, rendering — lives in the pure sibling
-//! modules, which are unit-tested.
+//! Phase 1: blank themed window (Header + StatusBar) that quits on `q`/Ctrl-C.
 
-mod action;
-mod app;
-mod form;
-mod keymap;
-mod otp;
-mod search;
-mod state;
+mod components;
+mod domain;
+mod id;
+mod model;
+mod msg;
 mod theme;
-mod tree;
-mod ui;
-mod update;
 
-use std::io::{self, Stdout};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use crossterm::event::{self, Event};
-use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
-use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
+use tuirealm::application::{Application, PollStrategy};
+use tuirealm::event::{Key, KeyEvent, KeyModifiers, NoUserEvent};
+use tuirealm::listener::EventListenerCfg;
+use tuirealm::subscription::{EventClause, Sub, SubClause};
+use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter};
 
-use app::App;
-use state::{Mode, NoticeKind};
-
-type Tui = Terminal<CrosstermBackend<Stdout>>;
-
-const TICK: Duration = Duration::from_millis(250);
+use id::Id;
+use model::Model;
+use msg::Msg;
 
 fn main() {
     if let Err(e) = run() {
@@ -41,121 +28,112 @@ fn main() {
     }
 }
 
-fn run() -> io::Result<()> {
-    // Load config; on parse error, fall back to defaults and remember the error
-    // so we can surface it to the user as a notification after the app is built.
-    let (config, config_err) = match passcore::Config::load() {
-        Ok(c) => (c, None),
-        Err(e) => (
-            passcore::Config::default(),
-            Some(format!("config ignored (parse error): {e}")),
-        ),
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    // Load config; fall back to defaults on error.
+    let config = passcore::Config::load().unwrap_or_default();
+
+    // Build the password store; fall back to a fake store on failure.
+    let store: Box<dyn passcore::PasswordStore + Send> =
+        match passcore::PassCliStore::detect(config.store_dir.clone()) {
+            Ok(s) => Box::new(s),
+            Err(_) => Box::new(passcore::FakeStore::new()),
+        };
+
+    // Initialise the terminal (crossterm).
+    // CrosstermTerminalAdapter::new() installs the panic hook automatically,
+    // and its Drop impl restores the terminal — no manual teardown needed.
+    let mut terminal = CrosstermTerminalAdapter::new()?;
+    terminal.enable_raw_mode()?;
+    terminal.enter_alternate_screen()?;
+
+    // Build the event listener: crossterm keyboard input + 250 ms tick.
+    let listener_cfg = EventListenerCfg::<NoUserEvent>::default()
+        .crossterm_input_listener(Duration::from_millis(20), 3)
+        .tick_interval(Duration::from_millis(250));
+
+    // Initialise tui-realm application.
+    let app: Application<Id, Msg, NoUserEvent> = Application::init(listener_cfg);
+
+    // Build the model and mount Phase-1 components.
+    let mut model = Model {
+        app,
+        quit: false,
+        redraw: true,
+        store,
+        config,
     };
+    model.mount_phase1();
 
-    // Build the store; on failure, show the help screen instead of crashing.
-    let mut app = match passcore::PassCliStore::detect(config.store_dir.clone()) {
-        Ok(store) => App::new(Box::new(store), config),
-        Err(e) => {
-            let mut a = App::new(Box::new(passcore::FakeStore::new()), config);
-            a.state.mode = Mode::Help;
-            a.state.notify(e.to_string(), NoticeKind::Error);
-            a
-        }
-    };
+    // Subscribe StatusBar to global quit keys so they fire even when no
+    // component has explicit focus.
+    model
+        .app
+        .subscribe(
+            &Id::StatusBar,
+            Sub::new(
+                EventClause::Keyboard(KeyEvent::new(Key::Char('q'), KeyModifiers::NONE)),
+                SubClause::Always,
+            ),
+        )
+        .ok(); // already subscribed is fine
 
-    // Surface config parse errors as a status bar notification.
-    if let Some(msg) = config_err {
-        app.state.notify(msg, NoticeKind::Error);
-    }
+    model
+        .app
+        .subscribe(
+            &Id::StatusBar,
+            Sub::new(
+                EventClause::Keyboard(KeyEvent::new(Key::Esc, KeyModifiers::NONE)),
+                SubClause::Always,
+            ),
+        )
+        .ok();
 
-    let mut terminal = setup_terminal()?;
-    install_panic_hook();
-    let res = event_loop(&mut terminal, &mut app);
-    teardown_terminal(&mut terminal)?;
-    res
-}
+    model
+        .app
+        .subscribe(
+            &Id::StatusBar,
+            Sub::new(
+                EventClause::Keyboard(KeyEvent::new(Key::Char('c'), KeyModifiers::CONTROL)),
+                SubClause::Always,
+            ),
+        )
+        .ok();
 
-fn setup_terminal() -> io::Result<Tui> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    Terminal::new(CrosstermBackend::new(stdout))
-}
-
-fn teardown_terminal(terminal: &mut Tui) -> io::Result<()> {
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()
-}
-
-/// Restore the terminal on panic so the user is not left in a broken state.
-fn install_panic_hook() {
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
-        hook(info);
-    }));
-}
-
-fn event_loop(terminal: &mut Tui, app: &mut App) -> io::Result<()> {
-    let mut last_tick = Instant::now();
+    // ── Main loop ────────────────────────────────────────────────────────────
     loop {
-        // Pass the current unix timestamp so the detail panel renders a live
-        // OTP code + countdown; the code is recomputed from the clock each frame.
-        terminal.draw(|f| ui::render(f, &app.state, now_unix()))?;
+        // Draw if needed.
+        if model.redraw {
+            model.view(&mut terminal);
+            model.redraw = false;
+        }
 
-        let timeout = TICK.saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == event::KeyEventKind::Press {
-                    handle_key(terminal, app, key)?;
+        // Poll for events; collect messages.
+        match model
+            .app
+            .tick(PollStrategy::Once(Duration::from_millis(20)))
+        {
+            Err(_) => {
+                // Listener died — exit gracefully.
+                model.quit = true;
+            }
+            Ok(messages) => {
+                if !messages.is_empty() {
+                    model.redraw = true;
+                }
+                for msg in messages {
+                    let mut next = Some(msg);
+                    while let Some(m) = next {
+                        next = model.update(Some(m));
+                    }
                 }
             }
         }
-        if last_tick.elapsed() >= TICK {
-            last_tick = Instant::now();
-        }
-        if app.state.should_quit {
-            return Ok(());
-        }
-    }
-}
 
-fn handle_key(terminal: &mut Tui, app: &mut App, key: event::KeyEvent) -> io::Result<()> {
-    let action = keymap::map(key, &app.state.mode, &app.config.keybindings);
-    if let Some(effect) = update::update(&mut app.state, action) {
-        if let action::SideEffect::RawEdit(path) = &effect {
-            // Suspend the TUI, hand off to `$EDITOR` via the core, then restore.
-            suspend_for_raw_edit(terminal, app, path)?;
-        } else {
-            app.perform(effect);
+        if model.quit {
+            break;
         }
     }
+
+    // terminal is restored automatically by CrosstermTerminalAdapter's Drop.
     Ok(())
-}
-
-/// Leave the alternate screen, run `pass edit` (which uses `$EDITOR`), restore.
-fn suspend_for_raw_edit(terminal: &mut Tui, app: &mut App, path: &str) -> io::Result<()> {
-    teardown_terminal(terminal)?;
-    // The core owns the `pass edit` invocation (encrypted tmpfile handling).
-    if let Err(e) = app.store.edit(path) {
-        app.state.notify(e.to_string(), NoticeKind::Error);
-    }
-    *terminal = setup_terminal()?;
-    app.reload_tree();
-    // Reload the detail if it was the edited entry.
-    if app.state.detail_path.as_deref() == Some(path) {
-        app.perform(action::SideEffect::LoadDetail(path.to_string()));
-    }
-    Ok(())
-}
-
-/// Current unix time in seconds. Passed to `ui::render` on every frame so the
-/// detail panel can display a live OTP code and countdown.
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }
