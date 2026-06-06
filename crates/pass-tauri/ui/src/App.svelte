@@ -3,7 +3,10 @@
   import TreePanel from './components/TreePanel.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import { list, showMeta, searchFuzzy, buildTree } from './lib/api';
+  import Form from './components/Form.svelte';
+  import ConfirmModal from './components/ConfirmModal.svelte';
+  import SearchBar from './components/SearchBar.svelte';
+  import { list, showMeta, remove, buildTree } from './lib/api';
   import type { EntryMeta, EntryNode } from './lib/types';
 
   let tree = $state<EntryNode[]>([]);
@@ -11,9 +14,15 @@
   let meta = $state<EntryMeta | null>(null);
   let statusMessage = $state('');
   let statusKind = $state<'info' | 'error'>('info');
-  let searchQuery = $state('');
   let isLoading = $state(true);
   let allPaths = $state<string[]>([]);
+
+  // Modal / form state
+  let showCreateForm = $state(false);
+  let showEditForm = $state(false);
+  let showDeleteModal = $state(false);
+
+  // ── Notifications ─────────────────────────────────────────────────────────────
 
   function showNotice(msg: string) {
     statusMessage = msg;
@@ -28,6 +37,21 @@
     statusKind = 'error';
   }
 
+  // ── Tree / entry loading ──────────────────────────────────────────────────────
+
+  async function refreshTree() {
+    try {
+      allPaths = await list();
+      tree = buildTree(allPaths);
+    } catch (e) {
+      showError(
+        `Could not connect to the password store. ` +
+        `Make sure 'pass' and 'gpg' are installed and the store is initialised. ` +
+        `Error: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+  }
+
   async function loadEntry(path: string) {
     selectedPath = path;
     meta = null;
@@ -38,17 +62,55 @@
     }
   }
 
-  async function handleSearch() {
-    const q = searchQuery.trim();
-    if (!q) {
-      tree = buildTree(allPaths);
-      return;
-    }
+  // ── Search ────────────────────────────────────────────────────────────────────
+
+  function handleSearchSelect(path: string) {
+    loadEntry(path);
+  }
+
+  function handleSearchClear() {
+    tree = buildTree(allPaths);
+  }
+
+  // ── CRUD actions ──────────────────────────────────────────────────────────────
+
+  function handleNew() {
+    showCreateForm = true;
+  }
+
+  function handleEdit() {
+    if (!selectedPath) return;
+    showEditForm = true;
+  }
+
+  function handleDeleteRequest() {
+    if (!selectedPath) return;
+    showDeleteModal = true;
+  }
+
+  async function handleDeleteConfirm() {
+    if (!selectedPath) return;
+    const deletedPath = selectedPath;
+    showDeleteModal = false;
     try {
-      const hits = await searchFuzzy(q);
-      tree = buildTree(hits);
+      await remove(deletedPath);
+      showNotice(`Deleted: ${deletedPath}`);
+      selectedPath = null;
+      meta = null;
+      await refreshTree();
     } catch (e) {
-      showError(`Search error: ${e instanceof Error ? e.message : String(e)}`);
+      showError(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function handleSaved() {
+    showCreateForm = false;
+    showEditForm = false;
+    showNotice('Entry saved.');
+    await refreshTree();
+    // Reload meta if an edit updated the currently selected entry
+    if (selectedPath) {
+      await loadEntry(selectedPath);
     }
   }
 
@@ -71,14 +133,30 @@
 <div class="app-layout">
   <header class="app-header">
     <h1>pass-tauri</h1>
-    <input
-      class="search-input"
-      type="search"
-      placeholder="Search…"
-      bind:value={searchQuery}
-      oninput={handleSearch}
-      aria-label="Search entries"
-    />
+    <div class="search-wrapper">
+      <SearchBar onselect={handleSearchSelect} onclear={handleSearchClear} />
+    </div>
+    <div class="header-actions">
+      <button class="btn-header" onclick={handleNew} data-testid="new-button">
+        + New
+      </button>
+      <button
+        class="btn-header"
+        onclick={handleEdit}
+        disabled={selectedPath === null}
+        data-testid="edit-button"
+      >
+        Edit
+      </button>
+      <button
+        class="btn-header btn-danger"
+        onclick={handleDeleteRequest}
+        disabled={selectedPath === null}
+        data-testid="delete-button"
+      >
+        Delete
+      </button>
+    </div>
   </header>
 
   <main class="app-body">
@@ -99,6 +177,34 @@
     <StatusBar message={statusMessage} kind={statusKind} />
   </footer>
 </div>
+
+<!-- Modals (rendered outside the normal flow) -->
+
+{#if showCreateForm}
+  <Form
+    mode="create"
+    onsaved={handleSaved}
+    oncancel={() => { showCreateForm = false; }}
+  />
+{/if}
+
+{#if showEditForm && selectedPath}
+  <Form
+    mode="edit"
+    path={selectedPath}
+    onsaved={handleSaved}
+    oncancel={() => { showEditForm = false; }}
+  />
+{/if}
+
+{#if showDeleteModal && selectedPath}
+  <ConfirmModal
+    title="Delete entry"
+    message={`Are you sure you want to permanently delete "${selectedPath}"? This cannot be undone.`}
+    onconfirm={handleDeleteConfirm}
+    oncancel={() => { showDeleteModal = false; }}
+  />
+{/if}
 
 <style>
   :global(*, *::before, *::after) {
@@ -127,14 +233,41 @@
   .app-header h1 {
     margin: 0;
     font-size: 1.1rem;
+    white-space: nowrap;
   }
-  .search-input {
+  .search-wrapper {
     flex: 1;
     max-width: 22rem;
-    padding: 0.3rem 0.6rem;
-    border: none;
+    position: relative;
+  }
+  .header-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+  .btn-header {
+    padding: 0.25rem 0.7rem;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-header:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.28);
+  }
+  .btn-header:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-danger {
+    background: rgba(198, 40, 40, 0.5);
+    border-color: rgba(239, 154, 154, 0.5);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: rgba(183, 28, 28, 0.7);
   }
   .app-body {
     display: flex;
