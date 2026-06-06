@@ -370,3 +370,96 @@ describe('Form — cancel', () => {
     expect(oncancel).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── Tag @-prefix normalization ────────────────────────────────────────────────
+
+describe('Form (create) — tag @-prefix normalization', () => {
+  it('stores tag without leading @ when user types @work', async () => {
+    mockInsert.mockResolvedValueOnce(undefined);
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    // Type a tag with leading @ and commit via blur
+    const tagInput = getByTestId('tag-input');
+    await fireEvent.input(tagInput, { target: { value: '@work' } });
+    await fireEvent.blur(tagInput);
+
+    // Fill required path and password, then save
+    await fireEvent.input(getByTestId('path-input'), { target: { value: 'web/test' } });
+    await fireEvent.input(getByTestId('password-input'), { target: { value: 'pw' } });
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        'web/test',
+        expect.objectContaining({
+          // Tag should be stored as 'work', NOT '@work'
+          tags: ['work'],
+        }),
+        false
+      );
+    });
+  });
+
+  it('stores plain tag unchanged', async () => {
+    mockInsert.mockResolvedValueOnce(undefined);
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    const tagInput = getByTestId('tag-input');
+    await fireEvent.input(tagInput, { target: { value: 'home' } });
+    await fireEvent.blur(tagInput);
+
+    await fireEvent.input(getByTestId('path-input'), { target: { value: 'web/test2' } });
+    await fireEvent.input(getByTestId('password-input'), { target: { value: 'pw' } });
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        'web/test2',
+        expect.objectContaining({ tags: ['home'] }),
+        false
+      );
+    });
+  });
+});
+
+// ── Password generator — rejection-sampling / charset ────────────────────────
+
+describe('Form (create) — generatePasswordLocally', () => {
+  it('Generate button produces a password of length >= 20 using only charset chars', async () => {
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(getByTestId('generate-button'));
+
+    const passwordInput = getByTestId('password-input') as HTMLInputElement;
+    const pw = passwordInput.value;
+    expect(pw.length).toBe(20);
+
+    const alpha = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const digits = '0123456789';
+    const sym = '!@#$%^&*()-_=+[]{}|;:,.<>?';
+    const charset = alpha + digits + sym;
+    for (const ch of pw) {
+      expect(charset).toContain(ch);
+    }
+  });
+});

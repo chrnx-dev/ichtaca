@@ -51,9 +51,24 @@
     const digits = '0123456789';
     const sym = '!@#$%^&*()-_=+[]{}|;:,.<>?';
     const charset = alpha + digits + (symbols ? sym : '');
-    const arr = new Uint8Array(len);
-    crypto.getRandomValues(arr);
-    return Array.from(arr, (b) => charset[b % charset.length]).join('');
+    // Rejection sampling: discard bytes >= floor(256 / charset.length) * charset.length
+    // to eliminate modulo bias.
+    const limit = Math.floor(256 / charset.length) * charset.length;
+    const result: string[] = [];
+    let buf = new Uint8Array(len * 2);
+    let pos = buf.length; // force refill on first iteration
+    while (result.length < len) {
+      if (pos >= buf.length) {
+        buf = new Uint8Array(len * 2);
+        crypto.getRandomValues(buf);
+        pos = 0;
+      }
+      const b = buf[pos++];
+      if (b < limit) {
+        result.push(charset[b % charset.length]);
+      }
+    }
+    return result.join('');
   }
 
   function handleGenerate() {
@@ -88,7 +103,7 @@
   // ── Tags management ───────────────────────────────────────────────────────────
 
   function addTag() {
-    const t = tagInput.trim();
+    const t = tagInput.trim().replace(/^@+/, '');
     if (t && !tags.includes(t)) {
       tags = [...tags, t];
     }
