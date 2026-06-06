@@ -235,4 +235,19 @@ mod tests {
         let hits = search_fuzzy_impl(&state, String::new()).unwrap();
         assert!(!hits.is_empty());
     }
+
+    #[test]
+    fn otp_code_does_not_leak_uri_or_secret() {
+        let state = state_with_github();
+        let otp = otp_code_impl(&state, "web/github.com".to_string()).unwrap();
+        let serialized = serde_json::to_string(&otp).expect("OtpCode must serialize");
+        assert!(
+            !serialized.contains("otpauth"),
+            "serialized OtpCode leaks OTP URI: {serialized}"
+        );
+        assert!(
+            !serialized.contains("JBSWY3DPEHPK3PXP"),
+            "serialized OtpCode leaks OTP secret: {serialized}"
+        );
+    }
 }
