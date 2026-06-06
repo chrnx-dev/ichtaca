@@ -4,6 +4,9 @@
 //! sibling modules (`state`, `tree`, `action`, `keymap`, `update`, `ui`, ...).
 
 mod action;
+// form is consumed by `update` (Task 10) and the form UI widget (Task 12).
+#[allow(dead_code)]
+mod form;
 mod keymap;
 mod search;
 mod state;
