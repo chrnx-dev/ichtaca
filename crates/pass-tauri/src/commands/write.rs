@@ -64,7 +64,7 @@ fn build_entry_text(input: &EntryInput) -> String {
         let tag_line = input
             .tags
             .iter()
-            .map(|t| format!("@{t}"))
+            .map(|t| format!("@{}", t.trim_start_matches('@')))
             .collect::<Vec<_>>()
             .join(" ");
         lines.push(tag_line);
@@ -459,6 +459,37 @@ mod tests {
     }
 
     // ── generate ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn insert_tags_strip_leading_at_prefix() {
+        // Tags sent as "@work" and "home" must both be stored without double-@.
+        let state = make_state();
+        let input = EntryInput {
+            password: "pw".to_string(),
+            fields: vec![],
+            otp: None,
+            tags: vec!["@work".to_string(), "home".to_string()],
+        };
+        insert_impl(&state, "web/tagged".to_string(), input, false).unwrap();
+        let store = state.store.lock().unwrap();
+        let entry = store.show("web/tagged").unwrap();
+        let text = entry.serialize();
+        assert!(
+            text.contains("@work"),
+            "expected @work in serialized text: {:?}",
+            text
+        );
+        assert!(
+            text.contains("@home"),
+            "expected @home in serialized text: {:?}",
+            text
+        );
+        assert!(
+            !text.contains("@@work"),
+            "double-@ prefix found in serialized text: {:?}",
+            text
+        );
+    }
 
     #[test]
     fn generate_writes_entry_of_requested_length() {
