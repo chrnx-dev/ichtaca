@@ -1,11 +1,12 @@
 //! Search bar overlay: query line + filtered results.
 
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState};
 use ratatui::Frame;
 
 use crate::state::AppState;
+use crate::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(Clear, area);
@@ -21,9 +22,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             .map(|p| ListItem::new(p.clone())),
     );
 
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme::border())
+        .title(Span::styled("Search", theme::title()));
+
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Search"))
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .block(block)
+        .highlight_style(theme::selection())
         .highlight_symbol("> ");
 
     // Offset cursor by 1: index 0 is the query line, results start at 1.
