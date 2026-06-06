@@ -8,6 +8,7 @@ mod action;
 #[allow(dead_code)]
 mod form;
 mod keymap;
+mod otp;
 mod search;
 mod state;
 mod tree;
