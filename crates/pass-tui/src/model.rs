@@ -4,6 +4,7 @@
 //! `Model::view` draws the three-row layout (Header / content / StatusBar).
 //! `Model::update` processes messages from the event loop.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -110,6 +111,12 @@ pub struct Model {
     /// path, then restores the TUI.  Set by `Msg::OpenRawEdit`; cleared by the
     /// main loop after the editor returns.
     pub pending_raw_edit: Option<String>,
+
+    // ── Entry-path guard (Bug 2) ──────────────────────────────────────────────
+    /// The set of real entry paths (leaves) from `store.list()`.
+    /// Used to distinguish entry nodes from directory nodes in the tree so we
+    /// never call `store.show` on a directory id.
+    pub entry_paths: HashSet<String>,
 }
 
 impl Model {
@@ -134,6 +141,9 @@ impl Model {
     ///
     /// Builds the entry tree from the store and activates Tree.
     pub fn mount_phase2(&mut self) {
+        // Populate the entry-path set so we can guard directory nodes.
+        self.entry_paths = self.store.list().unwrap_or_default().into_iter().collect();
+
         // Build tree from store listing.
         let tree = build_store_tree(self.store.as_ref());
 
@@ -224,6 +234,14 @@ impl Model {
             Overlay::TemplatePick => {
                 // Template picker: 55% wide, auto height (uses list component border)
                 let popup = centered_rect(area, 55, 55);
+                // Clear + opaque fill before drawing so the modal fully occludes
+                // the tree/detail behind it.
+                f.render_widget(tuirealm::ratatui::widgets::Clear, popup);
+                f.render_widget(
+                    tuirealm::ratatui::widgets::Block::default()
+                        .style(tuirealm::ratatui::style::Style::default().bg(theme::SURFACE)),
+                    popup,
+                );
                 if app.mounted(&Id::FormTemplate) {
                     app.view(&Id::FormTemplate, f, popup);
                 }
@@ -232,6 +250,10 @@ impl Model {
             Overlay::Search => {
                 // Search popup: 60% wide, 50% tall, centred.
                 let popup = centered_rect(area, 60, 50);
+
+                // Clear + opaque fill before drawing so the modal fully occludes
+                // the tree/detail behind it.
+                f.render_widget(tuirealm::ratatui::widgets::Clear, popup);
 
                 // Gold-bordered panel so the modal looks intentional.
                 let search_block = tuirealm::ratatui::widgets::Block::default()
@@ -245,7 +267,10 @@ impl Model {
                     .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
                     .title(tuirealm::ratatui::text::Line::from(
                         tuirealm::ratatui::text::Span::styled(
-                            " Search  [↑↓ navigate · Enter pick · Esc close] ",
+                            format!(
+                                " {}  Search  [↑↓ navigate · Enter pick · Esc close] ",
+                                theme::icons::SEARCH
+                            ),
                             tuirealm::ratatui::style::Style::default()
                                 .fg(theme::GOLD)
                                 .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
@@ -273,6 +298,10 @@ impl Model {
             Overlay::Form(mode) => {
                 // Form popup: 70% wide, 80% tall
                 let popup = centered_rect(area, 70, 80);
+
+                // Clear + opaque fill before drawing so the modal fully occludes
+                // the tree/detail behind it.
+                f.render_widget(tuirealm::ratatui::widgets::Clear, popup);
 
                 // Gold-bordered surface panel for the form.
                 let form_title = match mode {
@@ -368,6 +397,14 @@ impl Model {
             Overlay::Confirm => {
                 // Confirm dialog: 50% wide, 6 rows
                 let popup = centered_rect_fixed(area, 55, 7);
+                // Clear + opaque fill before drawing so the modal fully occludes
+                // the tree/detail behind it.
+                f.render_widget(tuirealm::ratatui::widgets::Clear, popup);
+                f.render_widget(
+                    tuirealm::ratatui::widgets::Block::default()
+                        .style(tuirealm::ratatui::style::Style::default().bg(theme::SURFACE)),
+                    popup,
+                );
                 if app.mounted(&Id::ConfirmDialog) {
                     app.view(&Id::ConfirmDialog, f, popup);
                 }
@@ -396,11 +433,21 @@ impl Model {
             }
 
             Some(Msg::SelectEntry(path)) => {
-                // Only load the entry if path changed; ignore dir nodes (no '/' = top-level dir, single segment).
-                if Some(&path) != self.selected_path.as_ref() {
-                    self.load_detail(&path);
+                if self.entry_paths.contains(&path) {
+                    // Real entry (leaf): load / refresh the detail panel.
+                    if Some(&path) != self.selected_path.as_ref() {
+                        self.load_detail(&path);
+                        self.reveal = false;
+                        self.notice = None;
+                    }
+                } else {
+                    // Directory node: record the selection but show an empty
+                    // detail panel — never call store.show on a dir id.
+                    self.selected_path = Some(path);
+                    self.detail_entry = None;
                     self.reveal = false;
                     self.notice = None;
+                    self.push_detail_clear();
                 }
                 self.redraw = true;
                 None
@@ -1105,6 +1152,8 @@ impl Model {
 
     /// Reload the tree widget from the store listing.
     fn reload_tree(&mut self) {
+        // Keep entry_paths in sync with the store after any mutation.
+        self.entry_paths = self.store.list().unwrap_or_default().into_iter().collect();
         let tree = build_store_tree(self.store.as_ref());
         let initial = self.selected_path.clone().or_else(|| first_leaf_id(&tree));
         let new_comp = EntryTree::new(tree, initial);
@@ -1225,6 +1274,7 @@ mod tests {
             search_results: Vec::new(),
             search_query: String::new(),
             pending_raw_edit: None,
+            entry_paths: HashSet::new(),
         }
     }
 
@@ -1234,7 +1284,7 @@ mod tests {
     fn select_entry_loads_detail() {
         let mut store = FakeStore::new();
         store.seed("web/github.com", "s3cr3t\nuser: alice\n");
-        let mut model = test_model(store);
+        let mut model = test_model_with_entries(store);
 
         model.update(Some(Msg::SelectEntry("web/github.com".to_string())));
 
@@ -1255,7 +1305,7 @@ mod tests {
         let mut store = FakeStore::new();
         store.seed("web/a", "pw_a\n");
         store.seed("web/b", "pw_b\n");
-        let mut model = test_model(store);
+        let mut model = test_model_with_entries(store);
 
         model.update(Some(Msg::SelectEntry("web/a".to_string())));
         model.reveal = true; // simulate user having toggled reveal
@@ -1268,7 +1318,7 @@ mod tests {
     fn toggle_reveal_flips_flag() {
         let mut store = FakeStore::new();
         store.seed("e", "secret\n");
-        let mut model = test_model(store);
+        let mut model = test_model_with_entries(store);
         model.update(Some(Msg::SelectEntry("e".to_string())));
 
         assert!(!model.reveal);
@@ -1299,7 +1349,7 @@ mod tests {
         // Use RFC 6238 SHA-1 test vector secret — any valid otpauth URI.
         let uri = "otpauth://totp/test?secret=GEZDGNBVGY3TQOJQ";
         store.seed("e/otp", &format!("pw\n{uri}\n"));
-        let mut model = test_model(store);
+        let mut model = test_model_with_entries(store);
 
         model.update(Some(Msg::SelectEntry("e/otp".to_string())));
         let entry = model.detail_entry.as_ref().expect("entry should be loaded");
@@ -1317,7 +1367,7 @@ mod tests {
         // The model should set a notice rather than panic.
         let mut store = FakeStore::new();
         store.seed("e", "secret\n");
-        let mut model = test_model(store);
+        let mut model = test_model_with_entries(store);
         model.update(Some(Msg::SelectEntry("e".to_string())));
         model.update(Some(Msg::Copy));
         // Either "copied" or an error notice should be set.
@@ -1332,7 +1382,7 @@ mod tests {
         // The notice must never contain the plaintext password.
         let mut store = FakeStore::new();
         store.seed("e", "v3ryS3cr3t!\n");
-        let mut model = test_model(store);
+        let mut model = test_model_with_entries(store);
         model.update(Some(Msg::SelectEntry("e".to_string())));
         model.update(Some(Msg::Copy));
         if let Some(notice) = &model.notice {
@@ -2032,6 +2082,96 @@ mod tests {
             entry_b.field("user"),
             Some("bob"),
             "entry-b user field must be unchanged"
+        );
+    }
+
+    // ── Bug 2: directory selection must not load a detail ─────────────────────
+
+    /// Helper: build a model with entry_paths pre-populated (as mount_phase2 would).
+    fn test_model_with_entries(store: FakeStore) -> Model {
+        use passcore::PasswordStore as _;
+        let paths: HashSet<String> = store.list().unwrap_or_default().into_iter().collect();
+        let listener_cfg = EventListenerCfg::<NoUserEvent>::default();
+        let app: Application<Id, Msg, NoUserEvent> = Application::init(listener_cfg);
+        Model {
+            app,
+            quit: false,
+            redraw: false,
+            store: Box::new(store),
+            config: passcore::Config::default(),
+            selected_path: None,
+            detail_entry: None,
+            reveal: false,
+            notice: None,
+            overlay: Overlay::None,
+            form: FormState::default(),
+            search_results: Vec::new(),
+            search_query: String::new(),
+            pending_raw_edit: None,
+            entry_paths: paths,
+        }
+    }
+
+    /// Selecting a directory id (not in the entry-path set) must leave
+    /// `detail_entry == None` and must NOT call `store.show`.
+    #[test]
+    fn select_directory_does_not_load_detail() {
+        let mut store = FakeStore::new();
+        store.seed("infra/vpn", "s3cr3t\n");
+        store.seed("infra/db", "db_pw\n");
+        let mut model = test_model_with_entries(store);
+
+        // "infra" is a directory id (not a leaf path).
+        model.update(Some(Msg::SelectEntry("infra".to_string())));
+
+        assert!(
+            model.detail_entry.is_none(),
+            "detail_entry must be None when a directory node is selected"
+        );
+        // selected_path is recorded (for UI highlighting) but no detail is loaded.
+        assert_eq!(
+            model.selected_path.as_deref(),
+            Some("infra"),
+            "selected_path is set to the directory id for highlight purposes"
+        );
+    }
+
+    /// Selecting a real entry (leaf) loads the detail entry.
+    #[test]
+    fn select_leaf_entry_loads_detail() {
+        let mut store = FakeStore::new();
+        store.seed("infra/vpn", "s3cr3t\n");
+        let mut model = test_model_with_entries(store);
+
+        model.update(Some(Msg::SelectEntry("infra/vpn".to_string())));
+
+        assert!(
+            model.detail_entry.is_some(),
+            "detail_entry must be Some when a real entry is selected"
+        );
+        assert_eq!(model.selected_path.as_deref(), Some("infra/vpn"),);
+    }
+
+    /// After selecting a directory, `detail_entry` is `None` — selecting a real
+    /// entry afterwards must load the detail and clear the `None` state.
+    #[test]
+    fn select_entry_after_directory_loads_detail() {
+        let mut store = FakeStore::new();
+        store.seed("infra/vpn", "vpn_pw\n");
+        let mut model = test_model_with_entries(store);
+
+        // First select the directory.
+        model.update(Some(Msg::SelectEntry("infra".to_string())));
+        assert!(
+            model.detail_entry.is_none(),
+            "detail_entry must be None for directory"
+        );
+
+        // Then select the real entry.
+        model.update(Some(Msg::SelectEntry("infra/vpn".to_string())));
+        assert!(
+            model.detail_entry.is_some(),
+            "must load detail after navigating from directory to entry"
         );
     }
 }
