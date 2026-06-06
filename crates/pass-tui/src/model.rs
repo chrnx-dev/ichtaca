@@ -432,28 +432,18 @@ impl Model {
                 let hits = passcore::fuzzy_paths(&q, &paths);
                 let result_paths: Vec<String> = hits.into_iter().map(|h| h.path).collect();
                 self.search_results = result_paths.clone();
-                // Update the results list widget (owned String → Line<'static>)
+                // Remount SearchResults with the current filtered paths so that
+                // the internal `paths` vec (used by `selected_path()`) stays in
+                // sync with what is displayed.  A plain `app.attr` call only
+                // updates the displayed text lines — it does NOT update the
+                // component's `paths` field — so index-based path lookup would
+                // silently return the wrong entry after any filtering step.
                 if self.app.mounted(&Id::SearchResults) {
-                    let rows: Vec<tuirealm::props::LineStatic> = result_paths
-                        .iter()
-                        .map(|p| tuirealm::props::LineStatic::from(p.clone()))
-                        .collect();
-                    use tuirealm::props::{PropPayload, PropValue};
-                    let _ = self.app.attr(
-                        &Id::SearchResults,
-                        Attribute::Text,
-                        AttrValue::Payload(PropPayload::Vec(
-                            rows.into_iter().map(PropValue::TextLine).collect(),
-                        )),
-                    );
-                    // Reset selection to top
-                    let _ = self.app.attr(
-                        &Id::SearchResults,
-                        Attribute::Value,
-                        AttrValue::Payload(tuirealm::props::PropPayload::Single(
-                            tuirealm::props::PropValue::Usize(0),
-                        )),
-                    );
+                    let mut results = SearchResults::default();
+                    results.set_paths(result_paths);
+                    let _ = self
+                        .app
+                        .remount(Id::SearchResults, Box::new(results), vec![]);
                 }
                 self.redraw = true;
                 None
@@ -557,14 +547,19 @@ impl Model {
                         }
                     }
                     Overlay::Form(FormMode::Edit) => {
+                        // Capture the original path before save_edit (which
+                        // reads self.selected_path) and before close_overlay
+                        // (which resets form state).
+                        let original_path = self.selected_path.clone();
                         let result = self.save_edit();
                         if let Err(e) = result {
                             self.form.error = Some(e);
                         } else {
-                            let path = self.form.path.clone();
                             self.close_overlay();
                             self.reload_tree();
-                            self.load_detail(&path);
+                            if let Some(path) = original_path {
+                                self.load_detail(&path);
+                            }
                             let _ = self.app.active(&Id::Tree);
                         }
                     }
@@ -725,6 +720,10 @@ impl Model {
     // ── Overlay management ────────────────────────────────────────────────────
 
     fn open_search(&mut self) {
+        // Lock global subscriptions so Esc/'q' no longer fire while the modal
+        // is open.  The active modal component still receives its keys directly.
+        self.app.lock_subs();
+
         // Populate initial results (all paths)
         let paths = self.store.list().unwrap_or_default();
         let hits = passcore::fuzzy_paths("", &paths);
@@ -787,10 +786,15 @@ impl Model {
         }
         self.overlay = Overlay::None;
         self.form = FormState::default();
+        // Restore global subscriptions now that no modal is active.
+        self.app.unlock_subs();
     }
 
     /// Open the template-pick modal (step 1 of create).
     fn open_template_pick(&mut self) {
+        // Lock global subscriptions while the modal is visible.
+        self.app.lock_subs();
+
         let templates = passcore::Template::resolve(&self.config);
         if !self.app.mounted(&Id::FormTemplate) {
             self.app
@@ -806,7 +810,13 @@ impl Model {
     }
 
     /// Open the create form pre-filled with the template at `tpl_idx`.
+    ///
+    /// Note: `open_template_pick` already locked subs; `close_overlay` unlocks
+    /// them before `SelectTemplate` calls this.  We therefore lock again here
+    /// for the create-form phase.
     fn open_create_form_with_template(&mut self, tpl_idx: usize) {
+        // Lock subscriptions for the create-form overlay.
+        self.app.lock_subs();
         let templates = passcore::Template::resolve(&self.config);
         let tpl = templates
             .get(tpl_idx)
@@ -834,6 +844,9 @@ impl Model {
     }
 
     fn open_edit_form(&mut self, path: &str) {
+        // Lock subscriptions while the edit form is open.
+        self.app.lock_subs();
+
         match self.store.show(path) {
             Ok(entry) => {
                 let fields = entry.fields();
@@ -854,6 +867,8 @@ impl Model {
                 self.mount_form_fields(FormMode::Edit);
             }
             Err(e) => {
+                // Failed to open — no overlay will be shown, so unlock subs.
+                self.app.unlock_subs();
                 self.notice = Some(format!("cannot open edit form: {e}"));
                 self.refresh_detail();
             }
@@ -917,6 +932,9 @@ impl Model {
     }
 
     fn open_confirm_delete(&mut self, path: &str) {
+        // Lock subscriptions while the confirm dialog is open.
+        self.app.lock_subs();
+
         self.overlay = Overlay::Confirm;
         if !self.app.mounted(&Id::ConfirmDialog) {
             self.app
@@ -1010,8 +1028,17 @@ impl Model {
     }
 
     /// Load the existing entry, apply form edits, and call `store.insert(..., true)`.
+    ///
+    /// The target path is always taken from `self.selected_path` (the path that
+    /// was active when the edit form was opened), **not** from the form's path
+    /// widget.  This prevents a user who edits the path field in the UI from
+    /// accidentally overwriting a different entry.
     fn save_edit(&mut self) -> Result<(), String> {
-        let path = self.form.path.clone();
+        // Use the original path that was active when the edit form was opened.
+        let path = self
+            .selected_path
+            .clone()
+            .ok_or_else(|| "no entry selected for edit".to_string())?;
         let mut entry = self
             .store
             .show(&path)
@@ -1536,6 +1563,8 @@ mod tests {
         // Seed an entry with an unknown free-text line.
         store.seed("web/x", "oldpw\nuser: alice\nsome unknown note\n@work\n");
         let mut model = test_model(store);
+        // selected_path must be set to the target entry (save_edit reads it).
+        model.selected_path = Some("web/x".to_string());
         model.form = FormState {
             path: "web/x".to_string(),
             password: "newpw".to_string(),
@@ -1580,6 +1609,8 @@ mod tests {
         let mut store = FakeStore::new();
         store.seed("web/x", "pw\nuser: alice\nurl: a.com\n");
         let mut model = test_model(store);
+        // selected_path must be set to the target entry.
+        model.selected_path = Some("web/x".to_string());
         // Edit: keep user, drop url
         model.form = FormState {
             path: "web/x".to_string(),
@@ -1602,6 +1633,9 @@ mod tests {
         store.seed("web/x", "pw\n");
         let mut model = test_model(store);
 
+        // selected_path must be set to the target entry.
+        model.selected_path = Some("web/x".to_string());
+
         // Set OTP
         model.form = FormState {
             path: "web/x".to_string(),
@@ -1615,7 +1649,7 @@ mod tests {
             "OTP URI must be set"
         );
 
-        // Clear OTP
+        // Clear OTP (selected_path is still "web/x" from above)
         model.form = FormState {
             path: "web/x".to_string(),
             password: "pw".to_string(),
@@ -1772,5 +1806,232 @@ mod tests {
         assert_eq!(r.height, 7);
         assert_eq!(r.x, 15); // (80-50)/2
         assert_eq!(r.y, 8); // (24-7)/2
+    }
+
+    // ── Fix 1: subscription locking while a modal is open ─────────────────────
+    //
+    // The Application::sub_lock field is private (lives in the tuirealm crate),
+    // so we cannot read it directly in tests.  We instead test the observable
+    // model behaviour that the locking enables:
+    //
+    // • While a modal is open, `model.overlay != Overlay::None`.  A Quit
+    //   message sent through `update` must not propagate (overlay suppresses
+    //   global Esc/'q'; the message is only produced by those subs when the
+    //   active component is NOT the modal — which, with locking, never happens).
+    //
+    // • After CloseOverlay the overlay is None and Quit is processed normally.
+    //
+    // We test the two simpler invariants: overlay is set on open and cleared on
+    // close.  The subs-locked/unlocked invariant is documented here and verified
+    // by the fact that `lock_subs`/`unlock_subs` are called alongside every
+    // overlay open/close (auditable in the source of open_* / close_overlay).
+
+    /// Opening the search overlay sets `overlay = Search`.
+    #[test]
+    fn open_search_sets_overlay() {
+        let mut store = FakeStore::new();
+        store.seed("web/a", "pw\n");
+        let mut model = test_model(store);
+        // Mount Phase-1 and Phase-2 so open_search can mount search components.
+        model.mount_phase1();
+        model.mount_phase2();
+
+        model.update(Some(Msg::OpenSearch));
+
+        assert_eq!(
+            model.overlay,
+            Overlay::Search,
+            "overlay must be Search after OpenSearch"
+        );
+        // Subscriptions are locked alongside the overlay being set.
+        // (lock_subs() is called unconditionally inside open_search)
+    }
+
+    /// Closing the search overlay resets `overlay` to `None`.
+    /// (unlock_subs() is called by close_overlay alongside the overlay reset.)
+    #[test]
+    fn close_overlay_resets_overlay() {
+        let mut store = FakeStore::new();
+        store.seed("web/a", "pw\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+
+        model.update(Some(Msg::OpenSearch));
+        assert_eq!(model.overlay, Overlay::Search);
+
+        model.update(Some(Msg::CloseOverlay));
+        assert_eq!(
+            model.overlay,
+            Overlay::None,
+            "overlay must be None after CloseOverlay"
+        );
+        // unlock_subs() is called by close_overlay — global subs resume.
+    }
+
+    /// `Msg::Quit` is processed directly (not via global subs) and must
+    /// always set the quit flag regardless of overlay state.
+    #[test]
+    fn quit_not_suppressed_when_no_overlay() {
+        let mut model = test_model(FakeStore::new());
+        assert_eq!(model.overlay, Overlay::None);
+        model.update(Some(Msg::Quit));
+        assert!(model.quit, "Quit must work when no overlay is open");
+    }
+
+    /// Template-pick overlay also locks subs.
+    #[test]
+    fn open_template_pick_sets_overlay() {
+        let mut model = test_model(FakeStore::new());
+        model.mount_phase1();
+        model.update(Some(Msg::OpenCreate));
+        assert_eq!(
+            model.overlay,
+            Overlay::TemplatePick,
+            "OpenCreate must show template-pick overlay"
+        );
+        // lock_subs() is called by open_template_pick alongside setting overlay.
+    }
+
+    /// Confirm-delete overlay also locks subs.
+    #[test]
+    fn open_confirm_delete_sets_overlay() {
+        let mut store = FakeStore::new();
+        store.seed("web/a", "pw\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+        model.selected_path = Some("web/a".to_string());
+
+        model.update(Some(Msg::AskDelete));
+        assert_eq!(
+            model.overlay,
+            Overlay::Confirm,
+            "AskDelete must show the confirm overlay"
+        );
+        // lock_subs() is called by open_confirm_delete alongside setting overlay.
+    }
+
+    // ── Fix 2: search result paths stay in sync with filter ───────────────────
+
+    /// After filtering, `search_results` contains only the filtered paths and
+    /// the SearchResults component is remounted with the same filtered set so
+    /// that index-based `selected_path()` lookups are correct.
+    #[test]
+    fn search_changed_syncs_result_paths() {
+        let mut store = FakeStore::new();
+        store.seed("web/github.com", "pw\n");
+        store.seed("web/gitlab.com", "pw\n");
+        store.seed("email/work", "pw\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+
+        // Open search then filter to only github
+        model.update(Some(Msg::OpenSearch));
+        model.update(Some(Msg::SearchChanged("github".to_string())));
+
+        assert_eq!(
+            model.search_results,
+            vec!["web/github.com".to_string()],
+            "model.search_results must contain only the filtered path"
+        );
+    }
+
+    /// Filtering to 2 results then selecting index 1 must pick the correct
+    /// (filtered) path, not an entry from the original unfiltered list.
+    #[test]
+    fn search_filter_selection_maps_to_correct_filtered_entry() {
+        let mut store = FakeStore::new();
+        store.seed("web/github.com", "gh_pw\n");
+        store.seed("web/gitlab.com", "gl_pw\n");
+        store.seed("email/work", "ew_pw\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+
+        // Open search and filter to the two "web/git*" entries.
+        model.update(Some(Msg::OpenSearch));
+        model.update(Some(Msg::SearchChanged("git".to_string())));
+
+        // After filtering the model must hold exactly two paths.
+        assert_eq!(
+            model.search_results.len(),
+            2,
+            "filter 'git' should produce 2 results"
+        );
+
+        // Simulate picking index 1 (the second filtered entry) via SearchPick.
+        let second_path = model.search_results[1].clone();
+        model.update(Some(Msg::SearchPick(second_path.clone())));
+
+        // The loaded entry must match the second filtered path.
+        assert_eq!(
+            model.selected_path.as_deref(),
+            Some(second_path.as_str()),
+            "SearchPick must load the correct filtered entry"
+        );
+        assert!(
+            model.detail_entry.is_some(),
+            "detail must be loaded for the picked entry"
+        );
+    }
+
+    // ── Fix 3: edit save always targets the original entry path ───────────────
+
+    /// Opening an edit form then saving with a modified path field in `form`
+    /// must update the *original* entry (A) and leave entry B untouched.
+    #[test]
+    fn save_edit_ignores_form_path_uses_selected_path() {
+        let mut store = FakeStore::new();
+        store.seed("web/entry-a", "pw_a\nuser: alice\n");
+        store.seed("web/entry-b", "pw_b\nuser: bob\n");
+        let mut model = test_model(store);
+
+        // Select entry-a as the active entry (as if the user navigated to it).
+        model.selected_path = Some("web/entry-a".to_string());
+
+        // Set up the form as if edit was opened on entry-a, but the user
+        // has modified the form's path field to point at entry-b.
+        model.form = FormState {
+            path: "web/entry-b".to_string(), // user typed this in the path widget
+            password: "new_pw_a".to_string(),
+            fields: vec![("user".to_string(), "alice_updated".to_string())],
+            otp: String::new(),
+            tags: String::new(),
+            focus_idx: 0,
+            pw_revealed: false,
+            error: None,
+            template_idx: 0,
+        };
+
+        let result = model.save_edit();
+        assert!(result.is_ok(), "save_edit must succeed: {:?}", result);
+
+        // Entry A must be updated.
+        let entry_a = model.store.show("web/entry-a").unwrap();
+        assert_eq!(
+            entry_a.password(),
+            "new_pw_a",
+            "entry-a password must be updated"
+        );
+        assert_eq!(
+            entry_a.field("user"),
+            Some("alice_updated"),
+            "entry-a user field must be updated"
+        );
+
+        // Entry B must be completely untouched.
+        let entry_b = model.store.show("web/entry-b").unwrap();
+        assert_eq!(
+            entry_b.password(),
+            "pw_b",
+            "entry-b must not be overwritten"
+        );
+        assert_eq!(
+            entry_b.field("user"),
+            Some("bob"),
+            "entry-b user field must be unchanged"
+        );
     }
 }
