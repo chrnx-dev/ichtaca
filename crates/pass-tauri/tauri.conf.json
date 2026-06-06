@@ -15,11 +15,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "deb", "appimage"]
+    "targets": ["app", "dmg", "deb", "appimage"],
+    "icon": ["icons/icon.png"],
+    "category": "Utility",
+    "shortDescription": "A secure password manager desktop client",
+    "longDescription": "pass-tauri is a Tauri-based desktop client for pass-compatible password stores. It provides a secure, native interface for managing encrypted credentials with backend-only secret handling — passwords and OTP URIs never leave the Rust process until explicitly requested."
   }
 }
