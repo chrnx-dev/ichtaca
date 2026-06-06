@@ -52,6 +52,11 @@ pub enum Msg {
     FormFocusNext,
     /// Move focus to the previous form field.
     FormFocusPrev,
+    /// Tab pressed while the path field is focused in Create mode.
+    /// The model will compute the longest common-prefix folder completion
+    /// and update the path field, or fall through to FormFocusNext when
+    /// there is nothing to complete.
+    PathTabComplete,
     /// Generate a password inside the form.
     Generate,
     /// Submit the current form.
