@@ -59,16 +59,38 @@ pub struct FormState {
     /// Which template was selected (for Create only).
     #[allow(dead_code)]
     pub template_idx: usize,
+    /// Form mode — needed for field_count (Fix 2: path field is not focusable
+    /// in Edit mode).
+    pub mode: FormMode,
 }
 
 impl FormState {
-    /// Total number of focusable inputs:
-    /// path(0) + password(1) + one value input per field + otp + tags.
+    /// Total number of focusable inputs.
+    ///
+    /// Create: path(0) + password(1) + one value input per field + otp + tags.
+    /// Edit:   password(1) + one value input per field + otp + tags
+    ///         (path is a static display, not a mounted input — Fix 2).
     ///
     /// Key labels are NOT focusable — they are rendered as static text.
-    /// So for n key/value pairs there are n focusable value inputs (not 2×n).
     pub fn field_count(&self) -> usize {
-        2 + self.fields.len() + 2
+        match self.mode {
+            FormMode::Create => 2 + self.fields.len() + 2,
+            // In Edit mode the path widget (index 0) is not mounted.
+            // The focusable inputs are: password + value fields + otp + tags
+            // = 1 + n + 2.  We still count from index 1 so the ids stay stable.
+            FormMode::Edit => 1 + self.fields.len() + 2,
+        }
+    }
+
+    /// First focusable index in the focus chain.
+    ///
+    /// Create: 0 (path input).
+    /// Edit:   1 (password — path is read-only display, Fix 2).
+    pub fn first_focus_idx(&self) -> usize {
+        match self.mode {
+            FormMode::Create => 0,
+            FormMode::Edit => 1,
+        }
     }
 }
 
@@ -306,7 +328,7 @@ impl Model {
 
                 // Gold-bordered surface panel for the form.
                 let form_title = match mode {
-                    FormMode::Create => " New Entry  [Enter save · Esc cancel · Ctrl-g generate] ",
+                    FormMode::Create => " New Entry  [Enter save · Esc cancel · Ctrl-g generate · Tab path-complete] ",
                     FormMode::Edit => " Edit Entry  [Enter save · Esc cancel · Ctrl-g generate] ",
                 };
                 let popup_block = tuirealm::ratatui::widgets::Block::default()
@@ -329,28 +351,37 @@ impl Model {
                 let inner_area = popup_block.inner(popup);
                 f.render_widget(popup_block, popup);
 
-                // Layout:
+                // Layout (Fix 1: no separate label row per field — key is the
+                // input's border title):
+                //
                 //   [optional error banner — 1 line]
-                //   path input               — 3 lines
-                //   password input           — 3 lines
+                //
+                //   Create mode:
+                //     path input               — 3 lines  (editable, titled "Path …")
+                //   Edit mode:
+                //     path display             — 2 lines  (read-only Paragraph, Fix 2)
+                //
+                //   password input             — 3 lines
                 //   for each key/value pair:
-                //     key label              — 1 line  (muted, non-focusable)
-                //     value input            — 3 lines
-                //   otp input                — 3 lines
-                //   tags input               — 3 lines
+                //     value input              — 3 lines  (titled with the key, Fix 1)
+                //   otp input                  — 3 lines
+                //   tags input                 — 3 lines
                 //   fill spacer
                 let error_height = if form.error.is_some() { 1u16 } else { 0 };
                 let mut constraints: Vec<Constraint> = Vec::new();
                 if error_height > 0 {
                     constraints.push(Constraint::Length(error_height));
                 }
-                // path + password
+                // path row: 3-line input (Create) or 2-line display (Edit, Fix 2)
+                match mode {
+                    FormMode::Create => constraints.push(Constraint::Length(3)),
+                    FormMode::Edit => constraints.push(Constraint::Length(2)),
+                }
+                // password
                 constraints.push(Constraint::Length(3));
-                constraints.push(Constraint::Length(3));
-                // per-field: 1 line label + 3 line value input
+                // per-field: one 3-line bordered input (no separate label row, Fix 1)
                 for _ in 0..form.fields.len() {
-                    constraints.push(Constraint::Length(1)); // key label
-                    constraints.push(Constraint::Length(3)); // value input
+                    constraints.push(Constraint::Length(3));
                 }
                 // otp + tags
                 constraints.push(Constraint::Length(3));
@@ -381,9 +412,42 @@ impl Model {
                     part_idx += 1;
                 }
 
-                // Render path field (focus index 0)
-                if app.mounted(&Id::FormField(0)) && part_idx < parts.len() {
-                    app.view(&Id::FormField(0), f, parts[part_idx]);
+                // Path row: editable Input in Create, read-only Paragraph in Edit (Fix 2).
+                if part_idx < parts.len() {
+                    match mode {
+                        FormMode::Create => {
+                            // Mounted path input (focus index 0)
+                            if app.mounted(&Id::FormField(0)) {
+                                app.view(&Id::FormField(0), f, parts[part_idx]);
+                            }
+                        }
+                        FormMode::Edit => {
+                            // Read-only path display (Fix 2): show lock icon + path
+                            // with a muted "(read-only)" hint.
+                            use tuirealm::ratatui::text::{Line, Span};
+                            use tuirealm::ratatui::widgets::Paragraph;
+                            let path_display = Paragraph::new(vec![
+                                Line::from(vec![
+                                    Span::styled(
+                                        format!(" {}  ", theme::icons::LOCK),
+                                        tuirealm::ratatui::style::Style::default().fg(theme::MUTED),
+                                    ),
+                                    Span::styled(
+                                        form.path.clone(),
+                                        tuirealm::ratatui::style::Style::default()
+                                            .fg(theme::TEXT)
+                                            .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                                    ),
+                                    Span::styled(
+                                        "  (read-only)",
+                                        tuirealm::ratatui::style::Style::default().fg(theme::MUTED),
+                                    ),
+                                ]),
+                                Line::from(Span::raw("")),
+                            ]);
+                            f.render_widget(path_display, parts[part_idx]);
+                        }
+                    }
                 }
                 part_idx += 1;
 
@@ -393,29 +457,10 @@ impl Model {
                 }
                 part_idx += 1;
 
-                // Render key/value pairs.
-                // Focus index 2..2+n  → value inputs only (key labels are static).
+                // Render key/value pairs (Fix 1: each value input's border title IS
+                // the key — no separate muted label row).
                 let base = 2usize;
-                for (i, (key, _)) in form.fields.iter().enumerate() {
-                    // Key label row (muted, not mounted — just a Paragraph).
-                    if part_idx < parts.len() {
-                        use tuirealm::ratatui::text::{Line, Span};
-                        use tuirealm::ratatui::widgets::Paragraph;
-                        let label = Paragraph::new(Line::from(vec![
-                            Span::styled(
-                                format!(" {key}"),
-                                tuirealm::ratatui::style::Style::default().fg(theme::MUTED),
-                            ),
-                            Span::styled(
-                                " :",
-                                tuirealm::ratatui::style::Style::default().fg(theme::MUTED),
-                            ),
-                        ]));
-                        f.render_widget(label, parts[part_idx]);
-                    }
-                    part_idx += 1;
-
-                    // Value input row (focus index base + i).
+                for (i, _) in form.fields.iter().enumerate() {
                     let val_idx = base + i;
                     if app.mounted(&Id::FormField(val_idx)) && part_idx < parts.len() {
                         app.view(&Id::FormField(val_idx), f, parts[part_idx]);
@@ -552,6 +597,42 @@ impl Model {
             Some(Msg::CloseOverlay) => {
                 self.close_overlay();
                 let _ = self.app.active(&Id::Tree);
+                self.redraw = true;
+                None
+            }
+
+            // ── Fix 3: path Tab-autocomplete ─────────────────────────────────
+            Some(Msg::PathTabComplete) => {
+                // Read the current text from the path field.
+                let current_text = match self
+                    .app
+                    .state(&Id::FormField(0))
+                    .unwrap_or(tuirealm::state::State::None)
+                {
+                    tuirealm::state::State::Single(tuirealm::state::StateValue::String(s)) => s,
+                    _ => String::new(),
+                };
+
+                let all_paths = self.store.list().unwrap_or_default();
+                let suggestions = crate::domain::folder_suggestions(&all_paths, &current_text);
+
+                if suggestions.is_empty() {
+                    // No folder match — fall through to normal field navigation.
+                    self.advance_form_focus(1);
+                } else {
+                    // Compute the longest common prefix of all suggestions.
+                    let completed = longest_common_prefix(&suggestions);
+                    // Push the completion into the mounted path widget.
+                    if self.app.mounted(&Id::FormField(0)) {
+                        let _ = self.app.attr(
+                            &Id::FormField(0),
+                            Attribute::Value,
+                            AttrValue::String(completed.clone()),
+                        );
+                    }
+                    self.form.path = completed;
+                    // Keep focus on the path field so the user can keep typing.
+                }
                 self.redraw = true;
                 None
             }
@@ -862,9 +943,12 @@ impl Model {
                 let _ = self.app.umount(&Id::FormTemplate);
             }
             Overlay::Form(_) => {
-                // Unmount all form fields
+                // Unmount all mounted form fields.
+                // In Edit mode the path field (index 0) is NOT mounted, so we
+                // start from first_focus_idx() and unmount count fields (Fix 2).
+                let first = self.form.first_focus_idx();
                 let count = self.form.field_count();
-                for i in 0..count {
+                for i in first..(first + count) {
                     let _ = self.app.umount(&Id::FormField(i));
                 }
             }
@@ -927,6 +1011,7 @@ impl Model {
             pw_revealed: false,
             error: None,
             template_idx: tpl_idx,
+            mode: FormMode::Create,
         };
         self.overlay = Overlay::Form(FormMode::Create);
         self.mount_form_fields(FormMode::Create);
@@ -947,10 +1032,13 @@ impl Model {
                     fields,
                     otp,
                     tags,
-                    focus_idx: 0,
+                    // Edit mode: start focus at password (index 1) since path
+                    // is read-only and not in the focus chain (Fix 2).
+                    focus_idx: 1,
                     pw_revealed: false,
                     error: None,
                     template_idx: 0,
+                    mode: FormMode::Edit,
                 };
                 self.overlay = Overlay::Form(FormMode::Edit);
                 self.mount_form_fields(FormMode::Edit);
@@ -965,17 +1053,18 @@ impl Model {
     }
 
     fn mount_form_fields(&mut self, mode: FormMode) {
-        let path_label = if mode == FormMode::Create {
-            "Path (e.g. web/github.com)"
-        } else {
-            "Path (read-only)"
-        };
-
-        // 0: Path (focus index 0)
-        let path_field = FormField::new(path_label, &self.form.path.clone(), false);
-        self.app
-            .mount(Id::FormField(0), Box::new(path_field), vec![])
-            .expect("mount FormField(0)");
+        // 0: Path (Fix 2: only mounted in Create mode — in Edit mode the path
+        //    is rendered as a static Paragraph in render_frame, not a widget).
+        if mode == FormMode::Create {
+            // Fix 3: mark path field so Tab emits PathTabComplete.
+            let path_field =
+                FormField::new("Path (e.g. web/github.com)", &self.form.path.clone(), false)
+                    .with_path();
+            self.app
+                .mount(Id::FormField(0), Box::new(path_field), vec![])
+                .expect("mount FormField(0)");
+        }
+        // In Edit mode FormField(0) is intentionally NOT mounted.
 
         // 1: Password (focus index 1)
         let pw_field = FormField::new(
@@ -988,11 +1077,11 @@ impl Model {
             .expect("mount FormField(1)");
 
         // 2..2+n: Value inputs for each key/value pair.
-        // Keys are rendered as static labels in render_frame — NOT mounted.
+        // Fix 1: the input's border title IS the field key (no separate label row).
         let base = 2usize;
-        for (i, (_k, v)) in self.form.fields.clone().iter().enumerate() {
+        for (i, (k, v)) in self.form.fields.clone().iter().enumerate() {
             let val_idx = base + i;
-            let val_field = FormField::new(&format!("Value {}", i + 1), v, false);
+            let val_field = FormField::new(k, v, false);
             self.app
                 .mount(Id::FormField(val_idx), Box::new(val_field), vec![])
                 .expect("mount value field");
@@ -1012,8 +1101,10 @@ impl Model {
             .mount(Id::FormField(tags_idx), Box::new(tags_field), vec![])
             .expect("mount Tags field");
 
-        // Activate first field
-        let _ = self.app.active(&Id::FormField(0));
+        // Activate the first focusable field.
+        // Create: index 0 (path); Edit: index 1 (password — Fix 2).
+        let first = self.form.first_focus_idx();
+        let _ = self.app.active(&Id::FormField(first));
     }
 
     fn open_confirm_delete(&mut self, path: &str) {
@@ -1034,11 +1125,18 @@ impl Model {
         if count == 0 {
             return;
         }
-        let new_idx = if delta >= 0 {
-            (self.form.focus_idx + delta as usize) % count
+        // In Edit mode the focusable indices are 1..=field_count (not 0).
+        // We model the chain as a window [first, first+count) cycling modulo
+        // count.  `focus_idx` always stores the real widget index.
+        let first = self.form.first_focus_idx();
+        // Map current focus_idx to its position within the chain.
+        let pos = self.form.focus_idx.saturating_sub(first);
+        let new_pos = if delta >= 0 {
+            (pos + delta as usize) % count
         } else {
-            (self.form.focus_idx + count - ((-delta) as usize % count)) % count
+            (pos + count - ((-delta) as usize % count)) % count
         };
+        let new_idx = first + new_pos;
         self.form.focus_idx = new_idx;
         let _ = self.app.active(&Id::FormField(new_idx));
     }
@@ -1048,15 +1146,21 @@ impl Model {
     /// Keys for key/value pairs come from `self.form.fields[i].0` (they are
     /// stored in form state as fixed labels — no key widget is mounted).
     /// Only the *value* for each pair is read from the mounted widget.
+    ///
+    /// In Edit mode FormField(0) is not mounted; `self.form.path` is already
+    /// set from `selected_path` when the form was opened (Fix 2).
     fn collect_form_values(&mut self) {
-        // path
-        if let tuirealm::state::State::Single(tuirealm::state::StateValue::String(v)) = self
-            .app
-            .state(&Id::FormField(0))
-            .unwrap_or(tuirealm::state::State::None)
-        {
-            self.form.path = v;
+        // path — only read from the widget in Create mode (Fix 2).
+        if self.form.mode == FormMode::Create {
+            if let tuirealm::state::State::Single(tuirealm::state::StateValue::String(v)) = self
+                .app
+                .state(&Id::FormField(0))
+                .unwrap_or(tuirealm::state::State::None)
+            {
+                self.form.path = v;
+            }
         }
+        // In Edit mode, self.form.path is already correct (set in open_edit_form).
         // password
         if let tuirealm::state::State::Single(tuirealm::state::StateValue::String(v)) = self
             .app
@@ -1229,6 +1333,31 @@ fn first_leaf_in_node(node: &tui_realm_treeview::Node<String>) -> Option<String>
         }
     }
     None
+}
+
+// ── Path autocomplete helper ──────────────────────────────────────────────────
+
+/// Return the longest common prefix of a non-empty slice of strings.
+///
+/// Used by `PathTabComplete` to collapse multiple folder suggestions to the
+/// furthest unique prefix (similar to shell Tab-completion behaviour).
+fn longest_common_prefix(strs: &[String]) -> String {
+    if strs.is_empty() {
+        return String::new();
+    }
+    let first = &strs[0];
+    let mut len = first.len();
+    for s in &strs[1..] {
+        len = first
+            .char_indices()
+            .zip(s.chars())
+            .take_while(|((_, a), b)| a == b)
+            .map(|((i, c), _)| i + c.len_utf8())
+            .last()
+            .unwrap_or(0)
+            .min(len);
+    }
+    first[..len].to_string()
 }
 
 // ── Secret building from FormState ────────────────────────────────────────────
@@ -1521,6 +1650,7 @@ mod tests {
             pw_revealed: false,
             error: None,
             template_idx: 0,
+            mode: FormMode::Create,
         };
         let secret = build_secret(&form);
         let text = secret.expose_str().to_string();
@@ -1548,6 +1678,7 @@ mod tests {
             pw_revealed: false,
             error: None,
             template_idx: 0,
+            mode: FormMode::Create,
         };
         let result = model.save_create();
         assert!(result.is_ok(), "create must succeed: {:?}", result);
@@ -1665,6 +1796,7 @@ mod tests {
             pw_revealed: false,
             error: None,
             template_idx: 0,
+            mode: FormMode::Edit,
         };
 
         let result = model.save_edit();
@@ -2093,6 +2225,7 @@ mod tests {
             pw_revealed: false,
             error: None,
             template_idx: 0,
+            mode: FormMode::Edit,
         };
 
         let result = model.save_edit();
@@ -2212,6 +2345,145 @@ mod tests {
         assert!(
             model.detail_entry.is_some(),
             "must load detail after navigating from directory to entry"
+        );
+    }
+
+    // ── Fix 1 + 2: FormState field_count / first_focus_idx ───────────────────
+
+    /// In Create mode: field_count = 2 + n_fields + 2; first = 0.
+    #[test]
+    fn form_state_create_field_count_and_first_focus() {
+        let state = FormState {
+            mode: FormMode::Create,
+            fields: vec![
+                ("user".to_string(), String::new()),
+                ("url".to_string(), String::new()),
+            ],
+            ..FormState::default()
+        };
+        // 2 (path+pw) + 2 (fields) + 2 (otp+tags) = 6
+        assert_eq!(state.field_count(), 6);
+        assert_eq!(
+            state.first_focus_idx(),
+            0,
+            "Create starts at index 0 (path)"
+        );
+    }
+
+    /// In Edit mode: field_count = 1 + n_fields + 2; first = 1 (password).
+    #[test]
+    fn form_state_edit_field_count_and_first_focus() {
+        let state = FormState {
+            mode: FormMode::Edit,
+            fields: vec![
+                ("user".to_string(), String::new()),
+                ("url".to_string(), String::new()),
+            ],
+            focus_idx: 1,
+            ..FormState::default()
+        };
+        // 1 (pw) + 2 (fields) + 2 (otp+tags) = 5
+        assert_eq!(state.field_count(), 5);
+        assert_eq!(
+            state.first_focus_idx(),
+            1,
+            "Edit starts at index 1 (password)"
+        );
+    }
+
+    // ── Fix 3: longest_common_prefix helper ──────────────────────────────────
+
+    #[test]
+    fn lcp_single_element() {
+        let v = vec!["infra/".to_string()];
+        assert_eq!(longest_common_prefix(&v), "infra/");
+    }
+
+    #[test]
+    fn lcp_two_sharing_prefix() {
+        let v = vec!["infra/".to_string(), "infra/net/".to_string()];
+        assert_eq!(longest_common_prefix(&v), "infra/");
+    }
+
+    #[test]
+    fn lcp_no_common_prefix() {
+        let v = vec!["infra/".to_string(), "store/".to_string()];
+        assert_eq!(longest_common_prefix(&v), "");
+    }
+
+    #[test]
+    fn lcp_empty_slice() {
+        let v: Vec<String> = vec![];
+        assert_eq!(longest_common_prefix(&v), "");
+    }
+
+    // ── Fix 3: PathTabComplete falls through when no match ────────────────────
+
+    /// When PathTabComplete fires and the store has no matching folder prefix
+    /// for the currently-typed text, the model advances focus (FormFocusNext
+    /// behaviour) and does not change the form path.
+    #[test]
+    fn path_tab_complete_no_match_advances_focus() {
+        let mut store = FakeStore::new();
+        store.seed("web/github.com", "pw\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        // Open the create form (Login template = index 0).
+        model.update(Some(Msg::SelectTemplate(0)));
+        assert_eq!(model.overlay, Overlay::Form(FormMode::Create));
+
+        // Starting focus is 0 (path).
+        assert_eq!(model.form.focus_idx, 0);
+
+        // Seed the path field with "zzz" which has no folder matches.
+        if model.app.mounted(&Id::FormField(0)) {
+            let _ = model.app.attr(
+                &Id::FormField(0),
+                Attribute::Value,
+                AttrValue::String("zzz".to_string()),
+            );
+        }
+
+        // PathTabComplete with typed text that matches nothing → advance focus.
+        model.update(Some(Msg::PathTabComplete));
+        // Focus must have moved to 1 (password).
+        assert_eq!(
+            model.form.focus_idx, 1,
+            "focus must advance when no folder matches"
+        );
+    }
+
+    /// When PathTabComplete fires and there is exactly one folder match, the
+    /// path field is updated to that folder (completion applied).
+    #[test]
+    fn path_tab_complete_single_match_completes_path() {
+        let mut store = FakeStore::new();
+        store.seed("infra/mac-studio", "pw\n");
+        store.seed("infra/rke", "pw\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.update(Some(Msg::SelectTemplate(0)));
+        assert_eq!(model.overlay, Overlay::Form(FormMode::Create));
+
+        // Seed the path field with "inf" (matches "infra/").
+        if model.app.mounted(&Id::FormField(0)) {
+            let _ = model.app.attr(
+                &Id::FormField(0),
+                Attribute::Value,
+                AttrValue::String("inf".to_string()),
+            );
+        }
+
+        model.update(Some(Msg::PathTabComplete));
+
+        // The path must be completed to "infra/" and focus must stay at 0.
+        assert_eq!(
+            model.form.path, "infra/",
+            "path must be completed to 'infra/'"
+        );
+        assert_eq!(
+            model.form.focus_idx, 0,
+            "focus must remain on path field after completion"
         );
     }
 }

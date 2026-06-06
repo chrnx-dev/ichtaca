@@ -44,9 +44,119 @@ pub fn generate_password(len: usize, symbols: bool) -> String {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Folder-prefix autocomplete helpers (Fix 3 — Create path field)
+// ---------------------------------------------------------------------------
+
+/// Return all unique folder prefixes derived from `all_paths` whose prefix
+/// matches `typed` (case-sensitive).
+///
+/// A folder prefix is any leading `dir/` segment of a path.  For example,
+/// the path `"infra/mac-studio"` yields the folder prefixes `"infra/"`.
+/// The path `"a/b/c"` yields `"a/"` and `"a/b/"`.
+///
+/// Each returned string ends with `/`.  Duplicates are removed and the
+/// result is sorted lexicographically.
+///
+/// Only entries that **start with** `typed` are included.  When `typed`
+/// itself ends with `/`, deeper folder levels rooted at that prefix are
+/// returned (and the prefix itself is excluded — it is already fully typed).
+pub fn folder_suggestions(all_paths: &[String], typed: &str) -> Vec<String> {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    for path in all_paths {
+        // Walk every proper-prefix folder of this path.
+        // "a/b/c" → ["a/", "a/b/"]   (the leaf "a/b/c" itself is excluded)
+        let parts: Vec<&str> = path.split('/').collect();
+        // We only want folder prefixes (1 up to len-1 segments).
+        for depth in 1..parts.len() {
+            let folder = format!("{}/", parts[..depth].join("/"));
+            if folder.starts_with(typed) && folder.as_str() != typed {
+                seen.insert(folder);
+            }
+        }
+    }
+
+    seen.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── folder_suggestions ────────────────────────────────────────────────────
+
+    fn sample_paths() -> Vec<String> {
+        vec![
+            "infra/mac-studio".to_string(),
+            "infra/rke".to_string(),
+            "store/x".to_string(),
+        ]
+    }
+
+    #[test]
+    fn folder_suggestions_prefix_inf_gives_infra() {
+        let suggestions = folder_suggestions(&sample_paths(), "inf");
+        assert_eq!(suggestions, vec!["infra/".to_string()]);
+    }
+
+    #[test]
+    fn folder_suggestions_empty_prefix_gives_all_top_folders() {
+        let mut suggestions = folder_suggestions(&sample_paths(), "");
+        suggestions.sort();
+        assert_eq!(
+            suggestions,
+            vec!["infra/".to_string(), "store/".to_string()]
+        );
+    }
+
+    #[test]
+    fn folder_suggestions_infra_slash_gives_no_deeper_folders_when_none_exist() {
+        // "infra/mac-studio" and "infra/rke" have no sub-folders under infra.
+        let suggestions = folder_suggestions(&sample_paths(), "infra/");
+        assert!(
+            suggestions.is_empty(),
+            "no deeper folders expected; got: {suggestions:?}"
+        );
+    }
+
+    #[test]
+    fn folder_suggestions_deeper_paths_yield_nested_folders() {
+        let paths = vec!["a/b/c".to_string(), "a/b/d".to_string(), "a/e".to_string()];
+        let mut suggestions = folder_suggestions(&paths, "a/");
+        suggestions.sort();
+        // "a/b/" is returned; "a/" itself is excluded (it equals typed)
+        assert_eq!(suggestions, vec!["a/b/".to_string()]);
+    }
+
+    #[test]
+    fn folder_suggestions_no_match_returns_empty() {
+        let suggestions = folder_suggestions(&sample_paths(), "zzz");
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn folder_suggestions_never_returns_leaf_paths() {
+        // Leaf paths ("infra/mac-studio") must never appear — only folders.
+        let suggestions = folder_suggestions(&sample_paths(), "infra/");
+        for s in &suggestions {
+            assert!(s.ends_with('/'), "all suggestions must end with '/'");
+        }
+    }
+
+    #[test]
+    fn folder_suggestions_deduplicates() {
+        let paths = vec!["web/github.com".to_string(), "web/gitlab.com".to_string()];
+        let suggestions = folder_suggestions(&paths, "");
+        // "web/" must appear exactly once.
+        assert_eq!(
+            suggestions.iter().filter(|s| s.as_str() == "web/").count(),
+            1,
+            "'web/' must appear exactly once"
+        );
+    }
+
+    // ── OTP / password tests (existing) ──────────────────────────────────────
 
     #[test]
     fn six_digit_code_is_grouped() {

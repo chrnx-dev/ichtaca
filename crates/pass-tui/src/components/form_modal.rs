@@ -53,8 +53,9 @@ use crate::theme;
 
 /// Whether the form is being used for creating a new entry or editing an
 /// existing one.  This controls which fields are shown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FormMode {
+    #[default]
     Create,
     Edit,
 }
@@ -64,6 +65,9 @@ pub enum FormMode {
 /// A single labelled input field inside the form.
 ///
 /// For the password field, `masked` should be `true`; all others plain text.
+/// For the path field in Create mode, `is_path` should be `true` so that Tab
+/// emits `PathTabComplete` instead of `FormFocusNext`, enabling folder
+/// autocomplete (Fix 3).
 pub struct FormField {
     inner: TuiInput,
     /// The semantic label (shown in the title).
@@ -71,6 +75,8 @@ pub struct FormField {
     pub label: String,
     /// Whether this field is the password field (masked + Ctrl-g).
     pub is_password: bool,
+    /// Whether this is the path field (Tab → PathTabComplete in Create mode).
+    pub is_path: bool,
     /// Whether the password is currently revealed (kept for tests and future use).
     #[allow(dead_code)]
     pub revealed: bool,
@@ -104,8 +110,15 @@ impl FormField {
             inner,
             label: label.to_string(),
             is_password,
+            is_path: false,
             revealed: false,
         }
+    }
+
+    /// Mark this field as the path field (Tab → `PathTabComplete`).
+    pub fn with_path(mut self) -> Self {
+        self.is_path = true;
+        self
     }
 
     /// Toggle password visibility (only meaningful when `is_password == true`).
@@ -166,11 +179,18 @@ impl AppComponent<Msg, NoUserEvent> for FormField {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Msg::SubmitForm),
 
-            // Tab / Shift-Tab — navigate between fields
+            // Tab — path field: attempt folder autocomplete first (Fix 3).
+            //        All other fields: navigate to next field.
             Event::Keyboard(KeyEvent {
                 code: Key::Tab,
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Msg::FormFocusNext),
+            }) => {
+                if self.is_path {
+                    Some(Msg::PathTabComplete)
+                } else {
+                    Some(Msg::FormFocusNext)
+                }
+            }
 
             Event::Keyboard(KeyEvent {
                 code: Key::BackTab,
