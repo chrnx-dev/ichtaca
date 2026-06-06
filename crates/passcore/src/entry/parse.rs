@@ -480,9 +480,8 @@ mod tests {
 
     #[test]
     fn fields_skips_password_otp_and_tag_lines() {
-        let e = Entry::parse(
-            "pw\nuser: bob\notpauth://totp/x?secret=ABC\n@work\nurl: example.com\n",
-        );
+        let e =
+            Entry::parse("pw\nuser: bob\notpauth://totp/x?secret=ABC\n@work\nurl: example.com\n");
         let f = e.fields();
         assert_eq!(f.len(), 2, "only user and url fields expected; got {f:?}");
         assert!(f.iter().any(|(k, v)| k == "user" && v == "bob"));
