@@ -6,14 +6,27 @@ use passcore::Secret;
 use crate::error::{CommandError, CommandResult};
 use crate::state::AppState;
 
-/// Form payload from the UI. `password` is line 1; `fields` are `key: value`
-/// rows; `otp` is an optional `otpauth://` line; `tags` join as `@a @b`.
+/// Form payload from the UI for *inserting* a new entry.
+/// `password` is line 1; `fields` are `key: value` rows;
+/// `otp` is an optional `otpauth://` line; `tags` join as `@a @b`.
 #[derive(Debug, Deserialize)]
 pub struct EntryInput {
     pub password: String,
     pub fields: Vec<(String, String)>,
     pub otp: Option<String>,
     pub tags: Vec<String>,
+}
+
+/// Form payload from the UI for *updating* an existing entry.
+/// Only `password` and `fields` are accepted — OTP and tags are preserved
+/// unchanged from the existing entry text.
+// NOTE: editing OTP/tags on an existing entry is a Phase-3 prerequisite —
+// it needs passcore `Entry::set_otp`/`set_tags`; until then update preserves
+// the existing otpauth/@tags lines.
+#[derive(Debug, Deserialize)]
+pub struct UpdateInput {
+    pub password: String,
+    pub fields: Vec<(String, String)>,
 }
 
 /// Build entry text from scratch (used by `insert`).
@@ -56,9 +69,10 @@ pub fn insert_impl(
         .map_err(CommandError::from)
 }
 
-pub fn update_entry_impl(state: &AppState, path: String, input: EntryInput) -> CommandResult<()> {
+pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> CommandResult<()> {
     let mut store = state.store.lock().unwrap();
-    // Load existing entry, apply structured changes (preserves unknown lines).
+    // Load existing entry, apply structured changes (preserves unknown lines,
+    // including existing otpauth:// and @tags lines).
     let mut entry = store.show(&path).map_err(CommandError::from)?;
     entry.set_password(&input.password);
     for (k, v) in &input.fields {
@@ -115,7 +129,7 @@ pub fn insert(
 pub fn update_entry(
     state: State<'_, AppState>,
     path: String,
-    input: EntryInput,
+    input: UpdateInput,
 ) -> CommandResult<()> {
     update_entry_impl(&state, path, input)
 }
@@ -156,7 +170,7 @@ mod tests {
         AppState::new(Box::new(FakeStore::new()), Config::default())
     }
 
-    fn make_input(password: &str, fields: Vec<(&str, &str)>, tags: Vec<&str>) -> EntryInput {
+    fn make_entry_input(password: &str, fields: Vec<(&str, &str)>, tags: Vec<&str>) -> EntryInput {
         EntryInput {
             password: password.to_string(),
             fields: fields
@@ -168,12 +182,22 @@ mod tests {
         }
     }
 
+    fn make_update_input(password: &str, fields: Vec<(&str, &str)>) -> UpdateInput {
+        UpdateInput {
+            password: password.to_string(),
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
     // ── insert ────────────────────────────────────────────────────────────────
 
     #[test]
     fn insert_creates_entry() {
         let state = make_state();
-        let input = make_input("secret", vec![("user", "bob")], vec![]);
+        let input = make_entry_input("secret", vec![("user", "bob")], vec![]);
         insert_impl(&state, "web/x".to_string(), input, false).unwrap();
         let store = state.store.lock().unwrap();
         let entry = store.show("web/x").unwrap();
@@ -184,9 +208,9 @@ mod tests {
     #[test]
     fn insert_overwrite_false_twice_returns_already_exists() {
         let state = make_state();
-        let input1 = make_input("pw1", vec![], vec![]);
+        let input1 = make_entry_input("pw1", vec![], vec![]);
         insert_impl(&state, "web/x".to_string(), input1, false).unwrap();
-        let input2 = make_input("pw2", vec![], vec![]);
+        let input2 = make_entry_input("pw2", vec![], vec![]);
         let err = insert_impl(&state, "web/x".to_string(), input2, false).unwrap_err();
         assert!(
             err.message.to_lowercase().contains("exist"),
@@ -220,7 +244,7 @@ mod tests {
         store.seed("web/site", "pw\nuser: bob\nrandom note\n");
         let state = AppState::new(Box::new(store), Config::default());
 
-        let input = make_input("newpw", vec![("user", "alice")], vec![]);
+        let input = make_update_input("newpw", vec![("user", "alice")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
         let store = state.store.lock().unwrap();
@@ -236,12 +260,42 @@ mod tests {
     }
 
     #[test]
+    fn update_entry_preserves_otp_and_note_lines() {
+        let mut store = FakeStore::new();
+        store.seed(
+            "web/site",
+            "pw\nuser: bob\notpauth://totp/x?secret=JBSWY3DPEHPK3PXP\nrandom note\n",
+        );
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = make_update_input("newpw", vec![("user", "alice")]);
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store.lock().unwrap();
+        let entry = store.show("web/site").unwrap();
+        assert_eq!(entry.password(), "newpw");
+        assert_eq!(entry.field("user"), Some("alice"));
+        // OTP line must survive the round-trip.
+        assert!(
+            entry.otp_uri().is_some(),
+            "OTP URI was lost after update; serialized: {:?}",
+            entry.serialize()
+        );
+        // Unknown note line must also survive.
+        assert!(
+            entry.serialize().contains("random note"),
+            "note line was lost after update; serialized: {:?}",
+            entry.serialize()
+        );
+    }
+
+    #[test]
     fn update_entry_updates_password_and_field() {
         let mut store = FakeStore::new();
         store.seed("web/site", "oldpw\nuser: bob\nurl: a.com\n");
         let state = AppState::new(Box::new(store), Config::default());
 
-        let input = make_input("newpw", vec![("user", "carol")], vec![]);
+        let input = make_update_input("newpw", vec![("user", "carol")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
         let store = state.store.lock().unwrap();
