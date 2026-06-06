@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "pass-tauri",
+  "identifier": "dev.chrnx.pass-tauri",
+  "build": {
+    "frontendDist": "./ui-dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "pass-tauri",
+        "width": 1024,
+        "height": 768
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "deb", "appimage"]
+  }
+}
