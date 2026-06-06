@@ -38,7 +38,7 @@ pub fn generate_password(len: usize, symbols: bool) -> String {
     let mut rng = rand::rng();
     (0..len)
         .map(|_| {
-            let idx: usize = rng.random::<u64>() as usize % pool.len();
+            let idx = rng.random_range(0..pool.len());
             pool[idx] as char
         })
         .collect()
