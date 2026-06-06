@@ -63,11 +63,12 @@ pub struct FormState {
 
 impl FormState {
     /// Total number of focusable inputs:
-    /// path + password + per-field (key + value) × n + otp + tags
-    /// For Create mode, an extra row for the template selector (simplified:
-    /// we treat template selection as a pre-mount step, not a live field).
+    /// path(0) + password(1) + one value input per field + otp + tags.
+    ///
+    /// Key labels are NOT focusable — they are rendered as static text.
+    /// So for n key/value pairs there are n focusable value inputs (not 2×n).
     pub fn field_count(&self) -> usize {
-        2 + self.fields.len() * 2 + 2
+        2 + self.fields.len() + 2
     }
 }
 
@@ -328,15 +329,33 @@ impl Model {
                 let inner_area = popup_block.inner(popup);
                 f.render_widget(popup_block, popup);
 
-                // Error banner (1 line) + field rows (3 lines each).
-                let num_fields = form.field_count();
+                // Layout:
+                //   [optional error banner — 1 line]
+                //   path input               — 3 lines
+                //   password input           — 3 lines
+                //   for each key/value pair:
+                //     key label              — 1 line  (muted, non-focusable)
+                //     value input            — 3 lines
+                //   otp input                — 3 lines
+                //   tags input               — 3 lines
+                //   fill spacer
                 let error_height = if form.error.is_some() { 1u16 } else { 0 };
                 let mut constraints: Vec<Constraint> = Vec::new();
                 if error_height > 0 {
                     constraints.push(Constraint::Length(error_height));
                 }
-                constraints.extend((0..num_fields).map(|_| Constraint::Length(3)));
-                // Add a spacer so fields don't stretch to fill the panel.
+                // path + password
+                constraints.push(Constraint::Length(3));
+                constraints.push(Constraint::Length(3));
+                // per-field: 1 line label + 3 line value input
+                for _ in 0..form.fields.len() {
+                    constraints.push(Constraint::Length(1)); // key label
+                    constraints.push(Constraint::Length(3)); // value input
+                }
+                // otp + tags
+                constraints.push(Constraint::Length(3));
+                constraints.push(Constraint::Length(3));
+                // spacer
                 constraints.push(Constraint::Fill(1));
 
                 let parts = Layout::default()
@@ -344,7 +363,7 @@ impl Model {
                     .constraints(constraints)
                     .split(inner_area);
 
-                let field_offset = if error_height > 0 { 1usize } else { 0 };
+                let mut part_idx = 0usize;
 
                 // Error banner in cochineal.
                 if let Some(err) = &form.error {
@@ -356,42 +375,65 @@ impl Model {
                             .fg(theme::COCHINEAL)
                             .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
                     )));
-                    f.render_widget(err_widget, parts[0]);
+                    if part_idx < parts.len() {
+                        f.render_widget(err_widget, parts[part_idx]);
+                    }
+                    part_idx += 1;
                 }
 
-                // Render path field (always index 0)
-                if app.mounted(&Id::FormField(0)) {
-                    app.view(&Id::FormField(0), f, parts[field_offset]);
+                // Render path field (focus index 0)
+                if app.mounted(&Id::FormField(0)) && part_idx < parts.len() {
+                    app.view(&Id::FormField(0), f, parts[part_idx]);
                 }
-                // Render password field (always index 1)
-                if app.mounted(&Id::FormField(1)) {
-                    app.view(&Id::FormField(1), f, parts[field_offset + 1]);
+                part_idx += 1;
+
+                // Render password field (focus index 1)
+                if app.mounted(&Id::FormField(1)) && part_idx < parts.len() {
+                    app.view(&Id::FormField(1), f, parts[part_idx]);
                 }
-                // Render key/value pairs (fields 2..2+n*2)
+                part_idx += 1;
+
+                // Render key/value pairs.
+                // Focus index 2..2+n  → value inputs only (key labels are static).
                 let base = 2usize;
-                for i in 0..form.fields.len() {
-                    let key_idx = base + i * 2;
-                    let val_idx = base + i * 2 + 1;
-                    let key_part = field_offset + key_idx;
-                    let val_part = field_offset + val_idx;
-                    if app.mounted(&Id::FormField(key_idx)) && key_part < parts.len() {
-                        app.view(&Id::FormField(key_idx), f, parts[key_part]);
+                for (i, (key, _)) in form.fields.iter().enumerate() {
+                    // Key label row (muted, not mounted — just a Paragraph).
+                    if part_idx < parts.len() {
+                        use tuirealm::ratatui::text::{Line, Span};
+                        use tuirealm::ratatui::widgets::Paragraph;
+                        let label = Paragraph::new(Line::from(vec![
+                            Span::styled(
+                                format!(" {key}"),
+                                tuirealm::ratatui::style::Style::default().fg(theme::MUTED),
+                            ),
+                            Span::styled(
+                                " :",
+                                tuirealm::ratatui::style::Style::default().fg(theme::MUTED),
+                            ),
+                        ]));
+                        f.render_widget(label, parts[part_idx]);
                     }
-                    if app.mounted(&Id::FormField(val_idx)) && val_part < parts.len() {
-                        app.view(&Id::FormField(val_idx), f, parts[val_part]);
+                    part_idx += 1;
+
+                    // Value input row (focus index base + i).
+                    let val_idx = base + i;
+                    if app.mounted(&Id::FormField(val_idx)) && part_idx < parts.len() {
+                        app.view(&Id::FormField(val_idx), f, parts[part_idx]);
                     }
+                    part_idx += 1;
                 }
-                // OTP and tags
-                let otp_idx = base + form.fields.len() * 2;
+
+                // OTP and tags (focus indices base+n and base+n+1)
+                let otp_idx = base + form.fields.len();
                 let tags_idx = otp_idx + 1;
-                let otp_part = field_offset + otp_idx;
-                let tags_part = field_offset + tags_idx;
-                if app.mounted(&Id::FormField(otp_idx)) && otp_part < parts.len() {
-                    app.view(&Id::FormField(otp_idx), f, parts[otp_part]);
+                if app.mounted(&Id::FormField(otp_idx)) && part_idx < parts.len() {
+                    app.view(&Id::FormField(otp_idx), f, parts[part_idx]);
                 }
-                if app.mounted(&Id::FormField(tags_idx)) && tags_part < parts.len() {
-                    app.view(&Id::FormField(tags_idx), f, parts[tags_part]);
+                part_idx += 1;
+                if app.mounted(&Id::FormField(tags_idx)) && part_idx < parts.len() {
+                    app.view(&Id::FormField(tags_idx), f, parts[part_idx]);
                 }
+                let _ = part_idx; // suppress unused-variable warning
             }
 
             Overlay::Confirm => {
@@ -929,13 +971,13 @@ impl Model {
             "Path (read-only)"
         };
 
-        // 0: Path
+        // 0: Path (focus index 0)
         let path_field = FormField::new(path_label, &self.form.path.clone(), false);
         self.app
             .mount(Id::FormField(0), Box::new(path_field), vec![])
             .expect("mount FormField(0)");
 
-        // 1: Password
+        // 1: Password (focus index 1)
         let pw_field = FormField::new(
             "Password  [Ctrl-g generate]",
             &self.form.password.clone(),
@@ -945,29 +987,25 @@ impl Model {
             .mount(Id::FormField(1), Box::new(pw_field), vec![])
             .expect("mount FormField(1)");
 
-        // 2..: Key/Value pairs
+        // 2..2+n: Value inputs for each key/value pair.
+        // Keys are rendered as static labels in render_frame — NOT mounted.
         let base = 2usize;
-        for (i, (k, v)) in self.form.fields.clone().iter().enumerate() {
-            let key_idx = base + i * 2;
-            let val_idx = key_idx + 1;
-            let key_field = FormField::new(&format!("Key {}", i + 1), k, false);
-            self.app
-                .mount(Id::FormField(key_idx), Box::new(key_field), vec![])
-                .expect("mount key field");
+        for (i, (_k, v)) in self.form.fields.clone().iter().enumerate() {
+            let val_idx = base + i;
             let val_field = FormField::new(&format!("Value {}", i + 1), v, false);
             self.app
                 .mount(Id::FormField(val_idx), Box::new(val_field), vec![])
                 .expect("mount value field");
         }
 
-        // OTP
-        let otp_idx = base + self.form.fields.len() * 2;
+        // OTP (focus index base + n)
+        let otp_idx = base + self.form.fields.len();
         let otp_field = FormField::new("OTP URI (otpauth://...)", &self.form.otp.clone(), false);
         self.app
             .mount(Id::FormField(otp_idx), Box::new(otp_field), vec![])
             .expect("mount OTP field");
 
-        // Tags
+        // Tags (focus index base + n + 1)
         let tags_idx = otp_idx + 1;
         let tags_field = FormField::new("Tags (space-separated)", &self.form.tags.clone(), false);
         self.app
@@ -1006,6 +1044,10 @@ impl Model {
     }
 
     /// Collect field values from mounted form widgets into `self.form`.
+    ///
+    /// Keys for key/value pairs come from `self.form.fields[i].0` (they are
+    /// stored in form state as fixed labels — no key widget is mounted).
+    /// Only the *value* for each pair is read from the mounted widget.
     fn collect_form_values(&mut self) {
         // path
         if let tuirealm::state::State::Single(tuirealm::state::StateValue::String(v)) = self
@@ -1023,29 +1065,27 @@ impl Model {
         {
             self.form.password = v;
         }
-        // key/value pairs
+        // key/value pairs — key comes from form state, value from mounted widget
         let base = 2usize;
         for i in 0..self.form.fields.len() {
-            let key_idx = base + i * 2;
-            let val_idx = key_idx + 1;
-            let key = match self.app.state(&Id::FormField(key_idx)) {
-                Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(s))) => s,
-                _ => self.form.fields[i].0.clone(),
-            };
+            let val_idx = base + i;
+            // Key is NOT read from a widget — it is the fixed label stored in
+            // form state.  Only the value input is mounted/readable.
+            let key = self.form.fields[i].0.clone();
             let val = match self.app.state(&Id::FormField(val_idx)) {
                 Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(s))) => s,
                 _ => self.form.fields[i].1.clone(),
             };
             self.form.fields[i] = (key, val);
         }
-        // OTP
-        let otp_idx = base + self.form.fields.len() * 2;
+        // OTP (focus index base + n)
+        let otp_idx = base + self.form.fields.len();
         if let Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(v))) =
             self.app.state(&Id::FormField(otp_idx))
         {
             self.form.otp = v;
         }
-        // Tags
+        // Tags (focus index base + n + 1)
         let tags_idx = otp_idx + 1;
         if let Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(v))) =
             self.app.state(&Id::FormField(tags_idx))

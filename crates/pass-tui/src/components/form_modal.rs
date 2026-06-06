@@ -1,15 +1,19 @@
 //! Create / Edit entry form modal.
 //!
 //! Fields (in focus order):
-//!   0  Template selector (only for Create; hidden for Edit)
-//!   1  Entry path (only for Create; shown but uneditable for Edit display)
-//!   2  Password (masked, with Ctrl-g generate shortcut)
-//!   3…n Key/Value pair rows  (key input + value input, interleaved)
-//!   n+1 OTP URI
-//!   n+2 Tags (space-separated)
+//!   0  Entry path (only editable in Create; shown as read-only label in Edit)
+//!   1  Password (masked, with Ctrl-g generate shortcut)
+//!   2…n+1 Value inputs for each key/value pair row
+//!          Keys are rendered as fixed muted labels — NOT editable inputs.
+//!          Focus chain skips key labels; only value inputs are focusable.
+//!   n+2 OTP URI
+//!   n+3 Tags (space-separated)
 //!
-//! All inputs are rendered as styled `tui_realm_stdlib::Input` widgets.
-//! Focus is managed by the `Model` — Tab/↑/↓ emit `FormFocusNext/Prev`.
+//! All editable rows use styled `tui_realm_stdlib::Input` widgets.
+//! Key labels use a simple ratatui `Paragraph` rendered inline (not a mounted
+//! component — they are drawn directly in `render_frame` alongside their value
+//! input).  Focus is managed by the `Model` — Tab/↑/↓ emit
+//! `FormFocusNext/Prev`.
 //! Enter on any focused field emits `SubmitForm`.
 //! Ctrl-g in the password field emits `Generate`.
 //! Esc emits `CloseOverlay`.
@@ -18,6 +22,18 @@
 //! defines the **input component wrappers** while `Model` mounts/unmounts them
 //! and manages the focus chain.  The `FormState` struct lives in `model.rs`
 //! and carries the actual field values extracted for saving.
+//!
+//! ## Field-key labels (Fix 2)
+//! Field keys come from the chosen template (Create) or from the existing
+//! entry (Edit).  They are display-only labels — the user cannot edit them.
+//! The keys are stored in `FormState.fields` as `(key_string, value_string)`
+//! pairs; `collect_form_values` reads the key from `FormState` directly and
+//! only reads the *value* from the mounted widget.
+//!
+//! Empty value → field is written with empty value (`set_field(k, "")`).
+//! Auto-removal of empty-value fields is NOT done; this keeps the logic simple.
+//!
+//! // TODO: optional add-custom-field affordance
 
 use tui_realm_stdlib::components::Input as TuiInput;
 use tuirealm::command::{Cmd, CmdResult};
@@ -177,11 +193,13 @@ impl AppComponent<Msg, NoUserEvent> for FormField {
                 modifiers: KeyModifiers::CONTROL,
             }) if self.is_password => Some(Msg::Generate),
 
-            // Normal character input
+            // Normal character input — accept plain chars AND Shift-chars
+            // (uppercase letters and symbols such as !@# arrive with SHIFT set).
+            // Any other modifier combo (CTRL, ALT, etc.) is NOT treated as text.
             Event::Keyboard(KeyEvent {
                 code: Key::Char(ch),
-                modifiers: KeyModifiers::NONE,
-            }) => {
+                modifiers,
+            }) if modifiers.is_empty() || *modifiers == KeyModifiers::SHIFT => {
                 self.perform(Cmd::Type(*ch));
                 Some(Msg::None)
             }
@@ -333,5 +351,69 @@ mod tests {
         }
         f.toggle_reveal();
         assert!(!f.revealed);
+    }
+
+    // ── Fix 1: Shift modifier accepted for uppercase/symbol input ────────────
+
+    /// Shift+letter must type the uppercase character into the input.
+    #[test]
+    fn shift_char_types_uppercase() {
+        let mut f = FormField::new("user", "", false);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('A'),
+            modifiers: KeyModifiers::SHIFT,
+        }));
+        // Should return None (consumed, not a nav message) and the value updated.
+        assert_eq!(msg, Some(Msg::None), "Shift+A must be consumed as text");
+        assert_eq!(f.get_value(), "A", "Shift+A must produce uppercase 'A'");
+    }
+
+    /// Plain lowercase must still work (regression guard).
+    #[test]
+    fn plain_char_still_types() {
+        let mut f = FormField::new("user", "", false);
+        f.on(&Event::Keyboard(KeyEvent::new(
+            Key::Char('a'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(f.get_value(), "a", "plain 'a' must still type");
+    }
+
+    /// Ctrl-g on a password field must still emit Generate, not be treated as text.
+    #[test]
+    fn ctrl_g_on_password_still_generates() {
+        let mut f = FormField::new("password", "", true);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(
+            msg,
+            Some(Msg::Generate),
+            "Ctrl-g on password field must still emit Generate"
+        );
+        // Value must not have 'g' typed in
+        assert_eq!(
+            f.get_value(),
+            "",
+            "Generate must not type a character into the field"
+        );
+    }
+
+    /// Ctrl-g on a NON-password field: NOT Generate AND NOT typed as text.
+    #[test]
+    fn ctrl_g_on_non_password_not_generate_not_text() {
+        let mut f = FormField::new("user", "", false);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_ne!(msg, Some(Msg::Generate), "must not be Generate");
+        // The default _ arm returns None without typing.
+        assert_eq!(
+            f.get_value(),
+            "",
+            "Ctrl-g on non-password must not type a character"
+        );
     }
 }
