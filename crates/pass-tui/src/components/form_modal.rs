@@ -1,15 +1,19 @@
 //! Create / Edit entry form modal.
 //!
 //! Fields (in focus order):
-//!   0  Template selector (only for Create; hidden for Edit)
-//!   1  Entry path (only for Create; shown but uneditable for Edit display)
-//!   2  Password (masked, with Ctrl-g generate shortcut)
-//!   3…n Key/Value pair rows  (key input + value input, interleaved)
-//!   n+1 OTP URI
-//!   n+2 Tags (space-separated)
+//!   0  Entry path (only editable in Create; shown as read-only label in Edit)
+//!   1  Password (masked, with Ctrl-g generate shortcut)
+//!   2…n+1 Value inputs for each key/value pair row
+//!          Keys are rendered as fixed muted labels — NOT editable inputs.
+//!          Focus chain skips key labels; only value inputs are focusable.
+//!   n+2 OTP URI
+//!   n+3 Tags (space-separated)
 //!
-//! All inputs are rendered as styled `tui_realm_stdlib::Input` widgets.
-//! Focus is managed by the `Model` — Tab/↑/↓ emit `FormFocusNext/Prev`.
+//! All editable rows use styled `tui_realm_stdlib::Input` widgets.
+//! Key labels use a simple ratatui `Paragraph` rendered inline (not a mounted
+//! component — they are drawn directly in `render_frame` alongside their value
+//! input).  Focus is managed by the `Model` — Tab/↑/↓ emit
+//! `FormFocusNext/Prev`.
 //! Enter on any focused field emits `SubmitForm`.
 //! Ctrl-g in the password field emits `Generate`.
 //! Esc emits `CloseOverlay`.
@@ -18,6 +22,18 @@
 //! defines the **input component wrappers** while `Model` mounts/unmounts them
 //! and manages the focus chain.  The `FormState` struct lives in `model.rs`
 //! and carries the actual field values extracted for saving.
+//!
+//! ## Field-key labels (Fix 2)
+//! Field keys come from the chosen template (Create) or from the existing
+//! entry (Edit).  They are display-only labels — the user cannot edit them.
+//! The keys are stored in `FormState.fields` as `(key_string, value_string)`
+//! pairs; `collect_form_values` reads the key from `FormState` directly and
+//! only reads the *value* from the mounted widget.
+//!
+//! Empty value → field is written with empty value (`set_field(k, "")`).
+//! Auto-removal of empty-value fields is NOT done; this keeps the logic simple.
+//!
+//! // TODO: optional add-custom-field affordance
 
 use tui_realm_stdlib::components::Input as TuiInput;
 use tuirealm::command::{Cmd, CmdResult};
