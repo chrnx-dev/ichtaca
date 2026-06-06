@@ -1,4 +1,4 @@
-//! Pure rendering: `render(frame, &AppState)`. No state mutation, no I/O.
+//! Pure rendering: `render(frame, &AppState, now_unix)`. No state mutation, no I/O.
 
 mod detail;
 mod form;
@@ -13,7 +13,10 @@ use ratatui::Frame;
 use crate::state::{AppState, Mode};
 
 /// Draw the whole UI for the current state.
-pub fn render(frame: &mut Frame, state: &AppState) {
+/// `now_unix` is the current unix timestamp in seconds; it is forwarded to the
+/// detail panel so the OTP code and countdown are recomputed from the clock each
+/// frame rather than from a cached value.
+pub fn render(frame: &mut Frame, state: &AppState, now_unix: u64) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -31,7 +34,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         .split(outer[0]);
 
     tree::render(frame, panels[0], state);
-    detail::render(frame, panels[1], state);
+    detail::render(frame, panels[1], state, now_unix);
     statusbar::render(frame, outer[1], state);
 
     match &state.mode {
@@ -51,10 +54,11 @@ mod tests {
     use ratatui::Terminal;
 
     /// Render the state into a 60×12 buffer and return a plain string for assertions.
-    fn draw(state: &AppState) -> String {
+    /// `now_unix` is passed to the detail panel for deterministic OTP rendering in tests.
+    fn draw_at(state: &AppState, now_unix: u64) -> String {
         let backend = TestBackend::new(60, 12);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| render(f, state)).unwrap();
+        terminal.draw(|f| render(f, state, now_unix)).unwrap();
         let buf = terminal.backend().buffer().clone();
         // Join all cell symbols row-by-row into a single string.
         let mut out = String::new();
@@ -65,6 +69,11 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    /// Convenience wrapper using timestamp 0 for tests that don't involve OTP.
+    fn draw(state: &AppState) -> String {
+        draw_at(state, 0)
     }
 
     fn browse_state() -> AppState {
@@ -129,6 +138,26 @@ mod tests {
         let out = draw(&s);
         assert!(out.contains("Search"), "missing 'Search' overlay title");
         assert!(out.contains("gi"), "query 'gi' not found in search overlay");
+    }
+
+    /// Detail panel shows the live OTP code + countdown for an entry with a known URI.
+    /// Secret JBSWY3DPEHPK3PXP at ts=0 → code 282760 → rendered "282 760", 30s remaining.
+    #[test]
+    fn detail_renders_live_otp_code_and_countdown() {
+        const TEST_URI: &str = "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP";
+        let mut s = browse_state();
+        s.detail = Some(passcore::Entry::parse(&format!("pw\n{TEST_URI}\n")));
+        s.detail_path = Some("web/github.com".into());
+        // ts=0: code=282760 → "282 760", 30s remaining
+        let out = draw_at(&s, 0);
+        assert!(
+            out.contains("282 760"),
+            "expected OTP code '282 760' in output, got:\n{out}"
+        );
+        assert!(
+            out.contains("30s"),
+            "expected '30s' countdown in output, got:\n{out}"
+        );
     }
 
     fn update_to_search(s: &mut AppState) {

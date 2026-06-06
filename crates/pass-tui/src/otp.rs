@@ -19,8 +19,6 @@ impl OtpView {
 
     /// The current code + seconds remaining, computed via the core for `now`.
     /// Returns `None` if the URI cannot be parsed.
-    // Called when OTP timestamp is threaded through render (follow-up task).
-    #[allow(dead_code)]
     pub fn current(&self, now_unix: u64) -> Option<(String, u64)> {
         // Real core API: `code_at` returns `Otp { code: String, seconds_remaining: u64 }`.
         // Use its fields directly — do NOT treat the `Otp` as a `&str`, and do NOT
@@ -32,7 +30,6 @@ impl OtpView {
 
 /// Group a 6-digit code as "123 456".
 // Used by `current()` and the detail render; tested directly.
-#[allow(dead_code)]
 pub fn format_code(code: &str) -> String {
     if code.len() == 6 {
         format!("{} {}", &code[..3], &code[3..])
@@ -42,8 +39,9 @@ pub fn format_code(code: &str) -> String {
 }
 
 /// Seconds remaining in the current period (1..=period).
-/// Kept for its own unit test; `current()` uses the value from `passcore::otp::code_at`.
-#[allow(dead_code)]
+/// `current()` uses the value from `passcore::otp::code_at`; this standalone
+/// function is exercised only by its unit test.
+#[allow(dead_code)] // only called from tests; kept for its isolated unit test
 pub fn seconds_remaining(now_unix: u64, period: u64) -> u64 {
     period - (now_unix % period)
 }

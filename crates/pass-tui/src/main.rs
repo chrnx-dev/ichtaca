@@ -87,7 +87,9 @@ fn install_panic_hook() {
 fn event_loop(terminal: &mut Tui, app: &mut App) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
-        terminal.draw(|f| ui::render(f, &app.state))?;
+        // Pass the current unix timestamp so the detail panel renders a live
+        // OTP code + countdown; the code is recomputed from the clock each frame.
+        terminal.draw(|f| ui::render(f, &app.state, now_unix()))?;
 
         let timeout = TICK.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
@@ -98,8 +100,6 @@ fn event_loop(terminal: &mut Tui, app: &mut App) -> io::Result<()> {
             }
         }
         if last_tick.elapsed() >= TICK {
-            // Tick: OTP countdown refresh happens implicitly on the next render
-            // because the detail panel recomputes from the clock each frame.
             last_tick = Instant::now();
         }
         if app.state.should_quit {
@@ -137,10 +137,8 @@ fn suspend_for_raw_edit(terminal: &mut Tui, app: &mut App, path: &str) -> io::Re
     Ok(())
 }
 
-/// Current unix time in seconds (used by the OTP view on each render).
-// Wired into the detail render in a follow-up task when the OTP timestamp is
-// threaded through `ui::render`; not dead code conceptually.
-#[allow(dead_code)]
+/// Current unix time in seconds. Passed to `ui::render` on every frame so the
+/// detail panel can display a live OTP code and countdown.
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

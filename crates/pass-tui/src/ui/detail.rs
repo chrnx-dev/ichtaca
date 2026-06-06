@@ -8,7 +8,7 @@ use ratatui::Frame;
 use crate::otp::OtpView;
 use crate::state::AppState;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &AppState, now_unix: u64) {
     let block = Block::default().borders(Borders::ALL).title("Detail");
     let text = match &state.detail {
         None => Text::from("Select an entry"),
@@ -30,8 +30,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
                 }
             }
             if let Some(otp) = OtpView::from_entry(entry) {
-                // Tick supplies the timestamp; show a stable placeholder here.
-                lines.push(Line::from(format!("otp: {} ({})", "------", &otp.uri)));
+                // Compute the live code from the clock timestamp passed in by the event loop.
+                let otp_line = match otp.current(now_unix) {
+                    Some((code, secs)) => format!("otp: {code} ({secs}s)"),
+                    None => "otp: [invalid uri]".to_string(),
+                };
+                lines.push(Line::from(otp_line));
             }
             Text::from(lines)
         }
