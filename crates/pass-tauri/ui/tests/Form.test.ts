@@ -611,3 +611,63 @@ describe('Form — OTP show/hide toggle', () => {
     });
   });
 });
+
+// ── Field key normalization (handleSave) ──────────────────────────────────────
+
+describe('Form (create) — field key trimming', () => {
+  it('trims surrounding whitespace from field keys before calling insert', async () => {
+    mockInsert.mockResolvedValueOnce(undefined);
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(getByTestId('add-field'));
+    await fireEvent.input(getByTestId('field-key-0'), { target: { value: '  user  ' } });
+    await fireEvent.input(getByTestId('field-value-0'), { target: { value: 'alice' } });
+
+    await fireEvent.input(getByTestId('path-input'), { target: { value: 'web/trim-test' } });
+    await fireEvent.input(getByTestId('password-input'), { target: { value: 'pw' } });
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        'web/trim-test',
+        expect.objectContaining({ fields: [['user', 'alice']] }),
+        false
+      );
+    });
+  });
+
+  it('drops rows whose trimmed key is empty', async () => {
+    mockInsert.mockResolvedValueOnce(undefined);
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(getByTestId('add-field'));
+    await fireEvent.input(getByTestId('field-key-0'), { target: { value: '   ' } });
+    await fireEvent.input(getByTestId('field-value-0'), { target: { value: 'some value' } });
+
+    await fireEvent.input(getByTestId('path-input'), { target: { value: 'web/drop-test' } });
+    await fireEvent.input(getByTestId('password-input'), { target: { value: 'pw' } });
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        'web/drop-test',
+        expect.objectContaining({ fields: [] }),
+        false
+      );
+    });
+  });
+});

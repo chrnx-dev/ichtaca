@@ -173,7 +173,9 @@
 
     const input: EntryInput = {
       password,
-      fields: fields.filter(([k]) => k.trim() !== ''),
+      fields: fields
+        .map(([k, v]) => [k.trim(), v] as [string, string])
+        .filter(([k]) => k !== ''),
       otp: otp.trim() || null,
       tags: [...tags],
     };

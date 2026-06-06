@@ -55,7 +55,10 @@ fn build_entry_text(input: &EntryInput) -> String {
     let mut lines = Vec::new();
     lines.push(input.password.clone());
     for (k, v) in &input.fields {
-        lines.push(format!("{k}: {v}"));
+        let k = k.trim();
+        if !k.is_empty() {
+            lines.push(format!("{k}: {v}"));
+        }
     }
     if let Some(otp) = &input.otp {
         lines.push(otp.clone());
@@ -90,38 +93,15 @@ pub fn insert_impl(
         .map_err(CommandError::from)
 }
 
-/// Collect the structured field keys from a serialized entry, using the same
-/// rules as `show_meta`: skip line 0, skip `otpauth://` lines, skip dedicated
-/// `@tag` lines (every token starts with `@`), split on first `:`.
-fn entry_field_keys(serialized: &str) -> Vec<String> {
-    let mut keys = Vec::new();
-    for line in serialized.lines().skip(1) {
-        let trimmed = line.trim();
-        if trimmed.starts_with("otpauth://") {
-            continue;
-        }
-        if !trimmed.is_empty() && trimmed.split_whitespace().all(|tok| tok.starts_with('@')) {
-            continue;
-        }
-        if let Some((k, _)) = line.split_once(':') {
-            let key = k.trim().to_string();
-            if !key.is_empty() {
-                keys.push(key);
-            }
-        }
-    }
-    keys
-}
-
 pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> CommandResult<()> {
     let mut store = state.store();
     // Load existing entry, apply structured changes (preserves unknown lines).
     let mut entry = store.show(&path).map_err(CommandError::from)?;
 
     // (1) Collect existing field keys from the original entry.
-    let existing_keys = entry_field_keys(&entry.serialize());
+    let existing_keys = entry.field_keys();
 
-    // (2) Build the set of keys present in the input.
+    // (2) Build the set of keys present in the input (normalized: trimmed).
     let input_keys: std::collections::HashSet<&str> =
         input.fields.iter().map(|(k, _)| k.trim()).collect();
 
@@ -132,10 +112,15 @@ pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> 
         }
     }
 
-    // (4-6) Apply the standard mutations.
+    // (4-6) Apply the standard mutations. Field keys are trimmed so a key like
+    // " user" matches the existing "user" field instead of deleting it and
+    // creating a spurious " user" line.
     entry.set_password(&input.password);
     for (k, v) in &input.fields {
-        entry.set_field(k, v);
+        let k = k.trim();
+        if !k.is_empty() {
+            entry.set_field(k, v);
+        }
     }
     entry.set_otp(input.otp.as_deref());
     entry.set_tags(&input.tags);
@@ -500,6 +485,42 @@ mod tests {
             entry.serialize().contains("note"),
             "free-text note must be preserved; serialized: {:?}",
             entry.serialize()
+        );
+    }
+
+    #[test]
+    fn update_entry_trims_field_key_whitespace_updates_in_place() {
+        // An input field key with surrounding whitespace (" user") must be
+        // normalized so it matches the existing `user` field: update in place,
+        // do NOT delete it, and do NOT create a spurious " user" line.
+        let mut store = FakeStore::new();
+        store.seed("web/site", "pw\nuser: bob\n");
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = UpdateInput {
+            password: "pw".to_string(),
+            fields: vec![(" user".into(), "alice".into())],
+            otp: None,
+            tags: vec![],
+        };
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store();
+        let entry = store.show("web/site").unwrap();
+        assert_eq!(
+            entry.field("user"),
+            Some("alice"),
+            "user must be updated in place; serialized: {:?}",
+            entry.serialize()
+        );
+        let serialized = entry.serialize();
+        let user_lines = serialized
+            .lines()
+            .filter(|l| l.split_once(':').is_some_and(|(k, _)| k.trim() == "user"))
+            .count();
+        assert_eq!(
+            user_lines, 1,
+            "must not create a duplicate ` user` line; serialized: {serialized:?}"
         );
     }
 
