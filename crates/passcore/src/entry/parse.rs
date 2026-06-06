@@ -86,6 +86,44 @@ impl Entry {
             .map(str::trim)
     }
 
+    /// Replace the first `otpauth://` line with `uri`, or append it when absent.
+    /// Pass `None` to remove the first such line (no-op if none exists).
+    pub fn set_otp(&mut self, uri: Option<&str>) {
+        let pos = self
+            .lines
+            .iter()
+            .position(|l| l.trim_start().starts_with("otpauth://"));
+        match (uri, pos) {
+            (Some(u), Some(i)) => self.lines[i] = u.to_string(),
+            (Some(u), None) => self.lines.push(u.to_string()),
+            (None, Some(i)) => {
+                self.lines.remove(i);
+            }
+            (None, None) => {}
+        }
+    }
+
+    /// Replace all dedicated `@tag` lines with a single new line built from
+    /// `tags`.  A *dedicated tag line* is a non-empty line where every
+    /// whitespace-separated token starts with `@`.  `key: value` field lines
+    /// (even a `tags:` field) are never touched.
+    ///
+    /// Leading `@` on input tags is stripped so neither `"work"` nor `"@work"`
+    /// produces `@@work`.  When `tags` is empty the lines are just removed.
+    pub fn set_tags(&mut self, tags: &[String]) {
+        // Remove all existing dedicated @-tag lines.
+        self.lines.retain(|line| !is_dedicated_tag_line(line));
+        // Append a new line if there is anything to write.
+        if !tags.is_empty() {
+            let line = tags
+                .iter()
+                .map(|t| format!("@{}", t.trim_start_matches('@')))
+                .collect::<Vec<_>>()
+                .join(" ");
+            self.lines.push(line);
+        }
+    }
+
     /// Tags collected from an optional `tags:` field (comma-separated, optional
     /// leading `@`) and from `@token` occurrences on non-password lines.
     /// Deduplicated, first-seen order preserved.
@@ -117,6 +155,14 @@ impl Entry {
         }
         tags
     }
+}
+
+/// Returns `true` when every whitespace-separated token in `line` starts with
+/// `@`.  An empty line is *not* a dedicated tag line.
+fn is_dedicated_tag_line(line: &str) -> bool {
+    let mut tokens = line.split_whitespace().peekable();
+    // Must have at least one token and none of them may be a `key:` token.
+    tokens.peek().is_some() && tokens.all(|t| t.starts_with('@'))
 }
 
 #[cfg(test)]
@@ -222,5 +268,89 @@ mod tests {
     fn tags_ignore_at_in_password_line() {
         let e = Entry::parse("@notatag\nuser: bob\n");
         assert!(e.tags().is_empty());
+    }
+
+    // ── set_otp ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_otp_replaces_existing() {
+        let mut e = Entry::parse("pw\nuser: bob\notpauth://totp/x?secret=A\nnote\n");
+        e.set_otp(Some("otpauth://totp/y?secret=B"));
+        let s = e.serialize();
+        assert!(s.contains("otpauth://totp/y?secret=B"), "new otp present");
+        assert!(!s.contains("otpauth://totp/x?secret=A"), "old otp gone");
+        assert!(s.contains("user: bob"), "user field intact");
+        assert!(s.contains("note"), "note intact");
+        // password first line unchanged
+        assert_eq!(e.password(), "pw");
+    }
+
+    #[test]
+    fn set_otp_appends_when_absent() {
+        let mut e = Entry::parse("pw\nuser: bob\n");
+        e.set_otp(Some("otpauth://totp/z?secret=C"));
+        let s = e.serialize();
+        assert!(s.contains("otpauth://totp/z?secret=C"), "otp appended");
+        assert!(s.contains("user: bob"), "user field intact");
+        assert_eq!(e.password(), "pw");
+    }
+
+    #[test]
+    fn set_otp_none_removes() {
+        let mut e = Entry::parse("pw\nuser: bob\notpauth://totp/x?secret=A\nnote\n");
+        e.set_otp(None);
+        let s = e.serialize();
+        assert!(!s.contains("otpauth://"), "otp line gone");
+        assert!(s.contains("user: bob"), "user field intact");
+        assert!(s.contains("note"), "note intact");
+        assert_eq!(e.password(), "pw");
+        // calling None again is a no-op
+        let before = e.serialize();
+        e.set_otp(None);
+        assert_eq!(e.serialize(), before, "second None is no-op");
+    }
+
+    // ── set_tags ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_tags_replaces_dedicated_line() {
+        let mut e = Entry::parse("pw\n@old @x\nnote\n");
+        e.set_tags(&["work".to_string(), "home".to_string()]);
+        let s = e.serialize();
+        assert!(s.contains("@work @home"), "@work @home line present");
+        assert!(!s.contains("@old"), "@old gone");
+        assert!(s.contains("note"), "note intact");
+        assert_eq!(e.password(), "pw");
+    }
+
+    #[test]
+    fn set_tags_strips_leading_at() {
+        let mut e = Entry::parse("pw\n");
+        e.set_tags(&["@work".to_string()]);
+        let s = e.serialize();
+        assert!(s.contains("@work"), "@work present");
+        assert!(!s.contains("@@work"), "no double-at");
+    }
+
+    #[test]
+    fn set_tags_empty_clears() {
+        let mut e = Entry::parse("pw\n@a @b\nnote\n");
+        e.set_tags(&[]);
+        let s = e.serialize();
+        assert!(!s.contains("@a"), "@a gone");
+        assert!(!s.contains("@b"), "@b gone");
+        assert!(s.contains("note"), "note intact");
+        assert_eq!(e.password(), "pw");
+    }
+
+    #[test]
+    fn set_tags_does_not_touch_tags_field() {
+        let mut e = Entry::parse("pw\ntags: a, b\nnote\n");
+        e.set_tags(&["x".to_string()]);
+        let s = e.serialize();
+        assert!(s.contains("tags: a, b"), "tags: field survives");
+        assert!(s.contains("@x"), "@x appended");
+        assert!(s.contains("note"), "note intact");
+        assert_eq!(e.password(), "pw");
     }
 }
