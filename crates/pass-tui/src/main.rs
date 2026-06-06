@@ -10,6 +10,7 @@ mod model;
 mod msg;
 mod theme;
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use tuirealm::application::{Application, PollStrategy};
@@ -71,6 +72,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         search_results: Vec::new(),
         search_query: String::new(),
         pending_raw_edit: None,
+        entry_paths: HashSet::new(),
     };
     model.mount_phase1();
     model.mount_phase2();

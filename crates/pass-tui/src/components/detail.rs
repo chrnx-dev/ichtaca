@@ -32,6 +32,7 @@ use tuirealm::state::State;
 use crate::domain;
 use crate::msg::Msg;
 use crate::theme;
+use crate::theme::icons;
 
 /// Right-panel detail component.
 pub struct Detail {
@@ -144,14 +145,18 @@ pub fn build_lines_pub(
 
 fn empty_hint_line() -> LineStatic {
     LineStatic::from(vec![SpanStatic::styled(
-        "  Select an entry to view its details",
+        format!("  {}  select an entry", icons::ENTRY),
         Style::default().fg(theme::MUTED),
     )])
 }
 
 fn kv_line(key: String, value_spans: Vec<SpanStatic>) -> LineStatic {
+    let icon = icons::for_key(&key);
     let mut parts: Vec<SpanStatic> = vec![
-        SpanStatic::styled(format!("  {key:<12}"), Style::default().fg(theme::MUTED)),
+        SpanStatic::styled(
+            format!("  {icon} {key:<12}"),
+            Style::default().fg(theme::MUTED),
+        ),
         SpanStatic::raw("  "),
     ];
     parts.extend(value_spans);
@@ -169,7 +174,7 @@ fn build_lines(
 
     // ── Path header ──────────────────────────────────────────────────────
     lines.push(LineStatic::from(vec![SpanStatic::styled(
-        format!("  {path}"),
+        format!("  {} {path}", icons::LOCK),
         Style::default()
             .fg(theme::GOLD)
             .add_modifier(TextModifiers::BOLD),
@@ -205,7 +210,7 @@ fn build_lines(
         let secs_str = format!(" {}s", o.seconds_remaining);
         lines.push(LineStatic::from(vec![
             SpanStatic::styled(
-                format!("  {:<14}", "otp"),
+                format!("  {} {:<12}", icons::OTP, "otp"),
                 Style::default().fg(theme::MUTED),
             ),
             SpanStatic::raw("  "),
@@ -220,7 +225,7 @@ fn build_lines(
         lines.push(LineStatic::from(vec![SpanStatic::raw("")]));
         let mut tag_spans: Vec<SpanStatic> = vec![
             SpanStatic::styled(
-                format!("  {:<14}", "tags"),
+                format!("  {} {:<12}", icons::TAG, "tags"),
                 Style::default().fg(theme::MUTED),
             ),
             SpanStatic::raw("  "),

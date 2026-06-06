@@ -15,6 +15,7 @@ use tuirealm::state::State;
 
 use crate::msg::Msg;
 use crate::theme;
+use crate::theme::icons;
 
 /// Header bar displaying the Ichtaca brand.
 pub struct Header {
@@ -25,7 +26,7 @@ impl Default for Header {
     fn default() -> Self {
         let brand_line = Line::from(vec![
             Span::styled(
-                "ICHTACA",
+                format!("{} ICHTACA", icons::LOCK),
                 Style::default()
                     .fg(theme::GOLD)
                     .add_modifier(TextModifiers::BOLD),

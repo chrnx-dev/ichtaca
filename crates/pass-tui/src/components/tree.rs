@@ -29,6 +29,7 @@ use tuirealm::state::{State, StateValue};
 
 use crate::msg::Msg;
 use crate::theme;
+use crate::theme::icons;
 
 /// Left-panel tree component.
 pub struct EntryTree {
@@ -236,7 +237,17 @@ fn entry_node_to_orange(n: &passcore::EntryNode) -> Node<String> {
         n.name.clone()
     };
 
-    let label = n.name.clone();
+    // Prefix the visible label with a Nerd Font glyph.
+    // Directories use a folder icon; leaves use a key icon.
+    // The treeview library does not have a "collapsed/expanded" callback at
+    // label-build time, so we use the closed-folder icon for all directories
+    // (the open/closed state is shown by the tree's own indent indicator).
+    let icon = if n.is_leaf() {
+        icons::ENTRY
+    } else {
+        icons::DIR_CLOSED
+    };
+    let label = format!("{icon} {}", n.name);
     let mut node = Node::new(id, label);
     for child in &n.children {
         node = node.with_child(entry_node_to_orange(child));

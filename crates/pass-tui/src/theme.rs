@@ -6,6 +6,14 @@
 //! e.g. `theme::title()` instead of constructing styles by hand.
 //!
 //! Hex values come from `specs/ichtaca-brand.md`.
+//!
+//! # Nerd Font icons
+//!
+//! This module also exports icon constants (`icons::*`) for Nerd Font glyphs
+//! used across the UI.  A **Nerd Font** must be installed and configured as
+//! the terminal font for these glyphs to render correctly.  Any font from
+//! <https://www.nerdfonts.com/> works — the recommended choice is
+//! **JetBrainsMono Nerd Font**.
 
 // Phase 2-3 will use all of these; suppress premature dead-code lints.
 #![allow(dead_code)]
@@ -125,6 +133,54 @@ pub fn text() -> Style {
 /// Border style: muted.
 pub fn border() -> Style {
     Style::default().fg(MUTED)
+}
+
+// ─── Nerd Font icons ────────────────────────────────────────────────────────
+
+/// Centralised Nerd Font glyph constants.
+///
+/// **Requires a Nerd Font** installed and set as the terminal font.
+/// Recommended: JetBrainsMono Nerd Font (<https://www.nerdfonts.com/>).
+pub mod icons {
+    /// Directory (folder) — collapsed state.  U+F07B
+    pub const DIR_CLOSED: &str = "\u{f07b}";
+    /// Directory (folder) — expanded state.  U+F07C
+    pub const DIR_OPEN: &str = "\u{f07c}";
+    /// Entry / leaf — key glyph.  U+F084
+    pub const ENTRY: &str = "\u{f084}";
+    /// Lock — used for the brand header and password field.  U+F023
+    pub const LOCK: &str = "\u{f023}";
+
+    // ── Detail-field icons ────────────────────────────────────────────────
+    /// Person / user field.  U+F007
+    pub const USER: &str = "\u{f007}";
+    /// Globe / URL or website field.  U+F0AC
+    pub const URL: &str = "\u{f0ac}";
+    /// Envelope / email field.  U+F0E0
+    pub const EMAIL: &str = "\u{f0e0}";
+    /// Clock / OTP countdown.  U+F017
+    pub const OTP: &str = "\u{f017}";
+    /// Tag / tags field.  U+F02B
+    pub const TAG: &str = "\u{f02b}";
+    /// Generic field / unknown key.  U+F15C
+    pub const FIELD: &str = "\u{f15c}";
+
+    // ── Misc UI icons ─────────────────────────────────────────────────────
+    /// Search / magnifying glass.  U+F002
+    pub const SEARCH: &str = "\u{f002}";
+
+    /// Return the best icon for a known field key, falling back to `FIELD`.
+    pub fn for_key(key: &str) -> &'static str {
+        match key.to_lowercase().as_str() {
+            "user" | "username" | "login" => USER,
+            "url" | "website" | "site" | "link" | "homepage" => URL,
+            "email" | "mail" => EMAIL,
+            "otp" | "totp" | "hotp" => OTP,
+            "tag" | "tags" => TAG,
+            "password" | "pass" | "pw" => LOCK,
+            _ => FIELD,
+        }
+    }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
