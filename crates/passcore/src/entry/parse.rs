@@ -77,6 +77,22 @@ impl Entry {
         self.lines.push(format!("{key}: {value}"));
     }
 
+    /// Remove the first `key: value` line (after the password line) whose key
+    /// trims to `key`. Returns true if a line was removed. Other lines/order
+    /// are preserved; line 0 (password) is never touched.
+    pub fn remove_field(&mut self, key: &str) -> bool {
+        let idx = self.lines.iter().enumerate().skip(1).find_map(|(i, line)| {
+            let (k, _) = line.split_once(':')?;
+            (k.trim() == key).then_some(i)
+        });
+        if let Some(i) = idx {
+            self.lines.remove(i);
+            true
+        } else {
+            false
+        }
+    }
+
     /// The first `otpauth://` line, if any.
     pub fn otp_uri(&self) -> Option<&str> {
         self.lines
@@ -155,6 +171,37 @@ impl Entry {
         }
         tags
     }
+
+    /// Trimmed keys of all `key: value` lines after line 0, excluding any
+    /// `otpauth://` line and any dedicated `@tag` line (a non-empty line whose
+    /// every whitespace token starts with `@`).
+    pub fn field_keys(&self) -> Vec<String> {
+        self.fields().into_iter().map(|(k, _)| k).collect()
+    }
+
+    /// Trimmed key+value pairs of all `key: value` lines after line 0, applying
+    /// the same skipping rules as [`field_keys`](Self::field_keys): excludes the
+    /// password line, any `otpauth://` line, and any dedicated `@tag` line.
+    pub fn fields(&self) -> Vec<(String, String)> {
+        self.lines
+            .iter()
+            .skip(1)
+            .filter_map(|line| {
+                if is_otp_line(line) || is_dedicated_tag_line(line) {
+                    return None;
+                }
+                let (k, v) = line.split_once(':')?;
+                let key = k.trim();
+                (!key.is_empty()).then(|| (key.to_string(), v.trim().to_string()))
+            })
+            .collect()
+    }
+}
+
+/// Returns `true` when `line` is an `otpauth://` URI line (ignoring leading
+/// whitespace).
+fn is_otp_line(line: &str) -> bool {
+    line.trim_start().starts_with("otpauth://")
 }
 
 /// Returns `true` when every whitespace-separated token in `line` starts with
@@ -352,5 +399,97 @@ mod tests {
         assert!(s.contains("@x"), "@x appended");
         assert!(s.contains("note"), "note intact");
         assert_eq!(e.password(), "pw");
+    }
+
+    // ── remove_field ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn remove_field_removes_matching_line() {
+        let mut e = Entry::parse("pw\nuser: bob\nurl: x\nnote\n");
+        assert!(e.remove_field("url"), "should return true when found");
+        let s = e.serialize();
+        assert!(!s.contains("url:"), "url line must be gone");
+        assert!(s.contains("user: bob"), "user: bob must be intact");
+        assert!(s.contains("note"), "note must be intact");
+        assert_eq!(e.password(), "pw", "password must be intact");
+    }
+
+    #[test]
+    fn remove_field_absent_returns_false() {
+        let mut e = Entry::parse("pw\nuser: bob\nurl: x\n");
+        let before = e.serialize();
+        assert!(!e.remove_field("missing"), "absent key returns false");
+        assert_eq!(e.serialize(), before, "entry must be unchanged");
+    }
+
+    #[test]
+    fn remove_field_never_touches_password() {
+        // Password line looks like a key: value pair; remove_field must ignore it.
+        let mut e = Entry::parse("key: secret\nuser: bob\n");
+        assert!(!e.remove_field("key"), "must not match password at index 0");
+        assert_eq!(e.password(), "key: secret", "password line intact");
+        assert!(e.serialize().contains("user: bob"), "user line intact");
+    }
+
+    #[test]
+    fn remove_field_round_trip_unrelated_lines_intact() {
+        let input = "pw\nuser: bob\nurl: example.com\nnote line\n";
+        let mut e = Entry::parse(input);
+        assert!(e.remove_field("url"));
+        let s = e.serialize();
+        // All unrelated lines are byte-identical in their original form.
+        assert!(s.starts_with("pw\n"), "password line byte-identical");
+        assert!(s.contains("user: bob"), "user field byte-identical");
+        assert!(s.contains("note line"), "note line byte-identical");
+        assert!(s.ends_with('\n'), "trailing newline preserved");
+    }
+
+    // ── field_keys / fields ────────────────────────────────────────────────────
+
+    #[test]
+    fn field_keys_returns_kv_keys_after_line0() {
+        let e = Entry::parse("pw\nuser: bob\nurl: example.com\n");
+        assert_eq!(e.field_keys(), vec!["user".to_string(), "url".to_string()]);
+    }
+
+    #[test]
+    fn field_keys_skips_password_otp_and_tag_lines() {
+        let e = Entry::parse(
+            "pw\nuser: bob\notpauth://totp/x?secret=ABC\n@work @home\nurl: example.com\n",
+        );
+        assert_eq!(e.field_keys(), vec!["user".to_string(), "url".to_string()]);
+    }
+
+    #[test]
+    fn field_keys_trims_keys() {
+        let e = Entry::parse("pw\n  user : bob\n");
+        assert_eq!(e.field_keys(), vec!["user".to_string()]);
+    }
+
+    #[test]
+    fn fields_returns_trimmed_key_value_pairs() {
+        let e = Entry::parse("pw\n  user :  bob \nurl: example.com\n");
+        assert_eq!(
+            e.fields(),
+            vec![
+                ("user".to_string(), "bob".to_string()),
+                ("url".to_string(), "example.com".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn fields_skips_password_otp_and_tag_lines() {
+        let e = Entry::parse(
+            "pw\nuser: bob\notpauth://totp/x?secret=ABC\n@work\nurl: example.com\n",
+        );
+        let f = e.fields();
+        assert_eq!(f.len(), 2, "only user and url fields expected; got {f:?}");
+        assert!(f.iter().any(|(k, v)| k == "user" && v == "bob"));
+        assert!(f.iter().any(|(k, v)| k == "url" && v == "example.com"));
+        assert!(
+            !f.iter().any(|(_, v)| v.contains("otpauth")),
+            "otp must not appear as a field; got {f:?}"
+        );
     }
 }

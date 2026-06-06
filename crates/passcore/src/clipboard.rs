@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+use zeroize::Zeroizing;
+
 use crate::error::{PassError, Result};
 use crate::secret::Secret;
 
@@ -38,7 +40,7 @@ pub fn copy_and_autoclear(
     secret: &Secret,
     timeout: Duration,
 ) -> Result<()> {
-    let expected = secret.expose_str().to_string();
+    let expected: Zeroizing<String> = Zeroizing::new(secret.expose_str().to_string());
     copy_with(backend.as_ref(), secret)?;
     std::thread::spawn(move || {
         std::thread::sleep(timeout);

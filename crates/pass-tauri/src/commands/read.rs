@@ -22,35 +22,17 @@ pub struct OtpCode {
 // ── impl helpers (testable without a Tauri runtime) ──────────────────────────
 
 pub fn list_impl(state: &AppState) -> CommandResult<Vec<String>> {
-    let store = state.store.lock().unwrap();
+    let store = state.store();
     store.list().map_err(CommandError::from)
 }
 
 pub fn show_meta_impl(state: &AppState, path: String) -> CommandResult<EntryMeta> {
-    let store = state.store.lock().unwrap();
+    let store = state.store();
     let entry = store.show(&path).map_err(CommandError::from)?;
 
-    // Enumerate key:value pairs from the serialized text, skipping:
-    //   line 0 (password), any `otpauth://` line, any `@tag`-only line.
-    let serialized = entry.serialize();
-    let mut fields = Vec::new();
-    for line in serialized.lines().skip(1) {
-        let trimmed = line.trim();
-        if trimmed.starts_with("otpauth://") {
-            continue;
-        }
-        // Skip bare `@tag` lines (all whitespace-separated tokens start with @)
-        if !trimmed.is_empty() && trimmed.split_whitespace().all(|tok| tok.starts_with('@')) {
-            continue;
-        }
-        if let Some((k, v)) = line.split_once(':') {
-            let key = k.trim().to_string();
-            let val = v.trim().to_string();
-            if !key.is_empty() {
-                fields.push((key, val));
-            }
-        }
-    }
+    // Key:value pairs, skipping line 0 (password), any `otpauth://` line, and
+    // any dedicated `@tag` line. See `Entry::fields`.
+    let fields = entry.fields();
 
     let tags = entry.tags();
     let has_otp = entry.otp_uri().is_some();
@@ -64,13 +46,13 @@ pub fn show_meta_impl(state: &AppState, path: String) -> CommandResult<EntryMeta
 }
 
 pub fn reveal_password_impl(state: &AppState, path: String) -> CommandResult<String> {
-    let store = state.store.lock().unwrap();
+    let store = state.store();
     let entry = store.show(&path).map_err(CommandError::from)?;
     Ok(entry.password().to_string())
 }
 
 pub fn otp_code_impl(state: &AppState, path: String) -> CommandResult<OtpCode> {
-    let store = state.store.lock().unwrap();
+    let store = state.store();
     let entry = store.show(&path).map_err(CommandError::from)?;
     let uri = entry.otp_uri().ok_or_else(|| CommandError {
         message: "no OTP URI configured for this entry".to_string(),
@@ -85,13 +67,13 @@ pub fn otp_code_impl(state: &AppState, path: String) -> CommandResult<OtpCode> {
 /// Reveal the raw `otpauth://` URI (contains the TOTP secret) — explicit,
 /// per-call, like reveal_password. Returns `None` if the entry has no OTP.
 pub fn reveal_otp_uri_impl(state: &AppState, path: &str) -> CommandResult<Option<String>> {
-    let store = state.store.lock().unwrap();
+    let store = state.store();
     let entry = store.show(path).map_err(CommandError::from)?;
     Ok(entry.otp_uri().map(|u| u.to_string()))
 }
 
 pub fn search_fuzzy_impl(state: &AppState, query: String) -> CommandResult<Vec<String>> {
-    let store = state.store.lock().unwrap();
+    let store = state.store();
     let paths = store.list().map_err(CommandError::from)?;
     let hits = passcore::fuzzy_paths(&query, &paths);
     Ok(hits.into_iter().map(|h| h.path).collect())

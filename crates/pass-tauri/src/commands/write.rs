@@ -55,7 +55,10 @@ fn build_entry_text(input: &EntryInput) -> String {
     let mut lines = Vec::new();
     lines.push(input.password.clone());
     for (k, v) in &input.fields {
-        lines.push(format!("{k}: {v}"));
+        let k = k.trim();
+        if !k.is_empty() {
+            lines.push(format!("{k}: {v}"));
+        }
     }
     if let Some(otp) = &input.otp {
         lines.push(otp.clone());
@@ -82,7 +85,7 @@ pub fn insert_impl(
     input: EntryInput,
     overwrite: bool,
 ) -> CommandResult<()> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store();
     let text = build_entry_text(&input);
     let secret = Secret::from(text.as_str());
     store
@@ -91,15 +94,38 @@ pub fn insert_impl(
 }
 
 pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> CommandResult<()> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store();
     // Load existing entry, apply structured changes (preserves unknown lines).
     let mut entry = store.show(&path).map_err(CommandError::from)?;
+
+    // (1) Collect existing field keys from the original entry.
+    let existing_keys = entry.field_keys();
+
+    // (2) Build the set of keys present in the input (normalized: trimmed).
+    let input_keys: std::collections::HashSet<&str> =
+        input.fields.iter().map(|(k, _)| k.trim()).collect();
+
+    // (3) Remove fields that exist in the entry but are absent from the input.
+    for key in &existing_keys {
+        if !input_keys.contains(key.trim()) {
+            entry.remove_field(key.trim());
+        }
+    }
+
+    // (4-6) Apply the standard mutations. Field keys are trimmed so a key like
+    // " user" matches the existing "user" field instead of deleting it and
+    // creating a spurious " user" line.
     entry.set_password(&input.password);
     for (k, v) in &input.fields {
-        entry.set_field(k, v);
+        let k = k.trim();
+        if !k.is_empty() {
+            entry.set_field(k, v);
+        }
     }
     entry.set_otp(input.otp.as_deref());
     entry.set_tags(&input.tags);
+
+    // (7) Serialize and persist.
     let text = entry.serialize();
     let secret = Secret::from(text.as_str());
     store
@@ -108,17 +134,17 @@ pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> 
 }
 
 pub fn remove_impl(state: &AppState, path: String) -> CommandResult<()> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store();
     store.remove(&path).map_err(CommandError::from)
 }
 
 pub fn mv_impl(state: &AppState, from: String, to: String) -> CommandResult<()> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store();
     store.mv(&from, &to).map_err(CommandError::from)
 }
 
 pub fn cp_impl(state: &AppState, from: String, to: String) -> CommandResult<()> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store();
     store.cp(&from, &to).map_err(CommandError::from)
 }
 
@@ -128,7 +154,7 @@ pub fn generate_impl(
     len: usize,
     symbols: bool,
 ) -> CommandResult<()> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store();
     store
         .generate(&path, len, symbols)
         .map(|_| ())
@@ -223,7 +249,7 @@ mod tests {
         let state = make_state();
         let input = make_entry_input("secret", vec![("user", "bob")], vec![]);
         insert_impl(&state, "web/x".to_string(), input, false).unwrap();
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/x").unwrap();
         assert_eq!(entry.password(), "secret");
         assert_eq!(entry.field("user"), Some("bob"));
@@ -253,7 +279,7 @@ mod tests {
             tags: vec!["work".to_string(), "personal".to_string()],
         };
         insert_impl(&state, "new/entry".to_string(), input, false).unwrap();
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("new/entry").unwrap();
         assert!(entry.otp_uri().is_some());
         assert!(entry.tags().contains(&"work".to_string()));
@@ -271,7 +297,7 @@ mod tests {
         let input = make_update_input("newpw", vec![("user", "alice")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("alice"));
@@ -294,7 +320,7 @@ mod tests {
         let input = make_update_input("newpw", vec![("user", "alice")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("alice"));
@@ -320,7 +346,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/site").unwrap();
         assert_eq!(
             entry.otp_uri(),
@@ -347,7 +373,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/site").unwrap();
         assert!(
             entry.otp_uri().is_none(),
@@ -376,7 +402,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/site").unwrap();
         let tags = entry.tags();
         assert!(
@@ -393,19 +419,109 @@ mod tests {
 
     #[test]
     fn update_entry_updates_password_and_field() {
+        // When url IS included in the input, it is updated; when omitted it is deleted.
+        // This test keeps url in the input to verify update-in-place still works.
         let mut store = FakeStore::new();
         store.seed("web/site", "oldpw\nuser: bob\nurl: a.com\n");
         let state = AppState::new(Box::new(store), Config::default());
 
-        let input = make_update_input("newpw", vec![("user", "carol")]);
+        let input = make_update_input("newpw", vec![("user", "carol"), ("url", "a.com")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("carol"));
-        // url field untouched
+        // url was included in input so it must still be present
         assert_eq!(entry.field("url"), Some("a.com"));
+    }
+
+    // ── field deletion ────────────────────────────────────────────────────────
+
+    #[test]
+    fn update_entry_deletes_omitted_field() {
+        // Seed: pw, user, url, plus a bare note line.
+        // Update with only user in fields (url omitted) → url must be gone,
+        // user updated, and the free-text note preserved.
+        let mut store = FakeStore::new();
+        store.seed("web/site", "pw\nuser: bob\nurl: x\nnote\n");
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = make_update_input("pw", vec![("user", "alice")]);
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store();
+        let entry = store.show("web/site").unwrap();
+        assert_eq!(entry.field("user"), Some("alice"), "user should be updated");
+        assert_eq!(entry.field("url"), None, "url should have been deleted");
+        assert!(
+            entry.serialize().contains("note"),
+            "free-text note must survive; serialized: {:?}",
+            entry.serialize()
+        );
+    }
+
+    #[test]
+    fn update_entry_free_text_line_preserved_independent_of_fields() {
+        // A bare note line (no `key: value` structure) is never treated as a
+        // field key; it must survive even when all named fields are removed.
+        let mut store = FakeStore::new();
+        store.seed("web/site", "pw\nuser: bob\nnote\n");
+        let state = AppState::new(Box::new(store), Config::default());
+
+        // No fields in input → user is removed; note (non-field) must survive.
+        let input = UpdateInput {
+            password: "pw".to_string(),
+            fields: vec![],
+            otp: None,
+            tags: vec![],
+        };
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store();
+        let entry = store.show("web/site").unwrap();
+        assert_eq!(entry.field("user"), None, "user should have been deleted");
+        assert!(
+            entry.serialize().contains("note"),
+            "free-text note must be preserved; serialized: {:?}",
+            entry.serialize()
+        );
+    }
+
+    #[test]
+    fn update_entry_trims_field_key_whitespace_updates_in_place() {
+        // An input field key with surrounding whitespace (" user") must be
+        // normalized so it matches the existing `user` field: update in place,
+        // do NOT delete it, and do NOT create a spurious " user" line.
+        let mut store = FakeStore::new();
+        store.seed("web/site", "pw\nuser: bob\n");
+        let state = AppState::new(Box::new(store), Config::default());
+
+        let input = UpdateInput {
+            password: "pw".to_string(),
+            fields: vec![(" user".into(), "alice".into())],
+            otp: None,
+            tags: vec![],
+        };
+        update_entry_impl(&state, "web/site".to_string(), input).unwrap();
+
+        let store = state.store();
+        let entry = store.show("web/site").unwrap();
+        assert_eq!(
+            entry.field("user"),
+            Some("alice"),
+            "user must be updated in place; serialized: {:?}",
+            entry.serialize()
+        );
+        let serialized = entry.serialize();
+        let user_lines = serialized
+            .lines()
+            .filter(|l| l.split_once(':').is_some_and(|(k, _)| k.trim() == "user"))
+            .count();
+        assert_eq!(
+            user_lines, 1,
+            "must not create a duplicate ` user` line; serialized: {serialized:?}"
+        );
     }
 
     // ── remove ────────────────────────────────────────────────────────────────
@@ -418,7 +534,7 @@ mod tests {
 
         remove_impl(&state, "web/x".to_string()).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         assert!(store.show("web/x").is_err());
     }
 
@@ -438,7 +554,7 @@ mod tests {
 
         mv_impl(&state, "web/old".to_string(), "web/new".to_string()).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         assert!(store.show("web/old").is_err());
         assert_eq!(store.show("web/new").unwrap().password(), "pw");
     }
@@ -453,7 +569,7 @@ mod tests {
 
         cp_impl(&state, "web/src".to_string(), "web/dst".to_string()).unwrap();
 
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         assert_eq!(store.show("web/src").unwrap().password(), "pw");
         assert_eq!(store.show("web/dst").unwrap().password(), "pw");
     }
@@ -471,7 +587,7 @@ mod tests {
             tags: vec!["@work".to_string(), "home".to_string()],
         };
         insert_impl(&state, "web/tagged".to_string(), input, false).unwrap();
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("web/tagged").unwrap();
         let text = entry.serialize();
         assert!(
@@ -495,7 +611,7 @@ mod tests {
     fn generate_writes_entry_of_requested_length() {
         let state = make_state();
         generate_impl(&state, "new/gen".to_string(), 20, false).unwrap();
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         let entry = store.show("new/gen").unwrap();
         assert_eq!(
             entry.password().chars().count(),
@@ -508,7 +624,7 @@ mod tests {
     fn generate_with_symbols_succeeds() {
         let state = make_state();
         generate_impl(&state, "new/sym".to_string(), 16, true).unwrap();
-        let store = state.store.lock().unwrap();
+        let store = state.store();
         assert_eq!(
             store.show("new/sym").unwrap().password().chars().count(),
             16
