@@ -114,6 +114,11 @@ impl App {
                 .notify("no form to generate into", NoticeKind::Error);
             return;
         };
+        if path.is_empty() {
+            self.state
+                .notify("name the entry before generating", NoticeKind::Error);
+            return;
+        }
         match self.store.generate(&path, length, true) {
             Ok(secret) => {
                 if let Some(form) = self.state.form.as_mut() {
@@ -203,6 +208,31 @@ mod tests {
             16,
             "generated password should be 16 chars"
         );
+    }
+
+    #[test]
+    fn generate_with_empty_path_emits_error_notification_and_does_not_call_store() {
+        let mut app = app_with_entries();
+        // Form with an empty path.
+        app.state.form = Some(crate::form::Form::new_from_template(
+            "",
+            crate::form::Template::Blank,
+        ));
+        app.perform(SideEffect::Generate { length: 16 });
+        // Should have an error notification, NOT a generated password.
+        let n = app
+            .state
+            .notification
+            .as_ref()
+            .expect("expected a notification");
+        assert_eq!(n.kind, crate::state::NoticeKind::Error);
+        assert!(
+            n.text.contains("name the entry"),
+            "expected 'name the entry' in error message, got: {}",
+            n.text
+        );
+        // Password field should still be empty (store was not called).
+        assert_eq!(app.state.form.as_ref().unwrap().password, "");
     }
 
     #[test]
