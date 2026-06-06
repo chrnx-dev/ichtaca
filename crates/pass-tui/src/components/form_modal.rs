@@ -179,6 +179,12 @@ impl AppComponent<Msg, NoUserEvent> for FormField {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Msg::SubmitForm),
 
+            // Ctrl-s: save from any field (consistent with the Notes textarea).
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => Some(Msg::SubmitForm),
+
             // Tab — path field: attempt folder autocomplete first (Fix 3).
             //        All other fields: navigate to next field.
             Event::Keyboard(KeyEvent {
