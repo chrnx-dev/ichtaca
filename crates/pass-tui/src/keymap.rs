@@ -72,17 +72,31 @@ fn map_text_input(ev: KeyEvent) -> Action {
         KeyCode::Esc => Action::Cancel,
         KeyCode::Enter => Action::Accept,
         KeyCode::Backspace => Action::Backspace,
+        KeyCode::Down => Action::MoveDown,
+        KeyCode::Up => Action::MoveUp,
         KeyCode::Char(c) => Action::Input(c),
         _ => Action::Noop,
     }
 }
 
 /// Keymap for the create/edit form overlay.
-/// Extends `map_text_input` with Ctrl-g → `GenerateInField`.
+/// Extends `map_text_input` with:
+/// - Ctrl-g → `GenerateInField`
+/// - Tab → `MoveDown` (cycle fields forward)
+/// - BackTab → `MoveUp` (cycle fields backward)
+///
+/// Note: bare `j`/`k` still produce `Input('j')`/`Input('k')` (text input),
+/// NOT navigation. Only Tab/arrows navigate fields in form mode.
 fn map_edit_form(ev: KeyEvent) -> Action {
     // Ctrl-g generates a password into the focused field.
     if ev.code == KeyCode::Char('g') && ev.modifiers == KeyModifiers::CONTROL {
         return Action::GenerateInField;
+    }
+    // Tab / BackTab cycle fields.
+    match ev.code {
+        KeyCode::Tab => return Action::MoveDown,
+        KeyCode::BackTab => return Action::MoveUp,
+        _ => {}
     }
     map_text_input(ev)
 }
@@ -198,6 +212,92 @@ mod tests {
                 &kb
             ),
             Action::Cancel
+        );
+    }
+
+    #[test]
+    fn edit_form_tab_maps_to_move_down() {
+        let kb = KeybindingsConfig::default();
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(
+            map(tab, &Mode::EditForm, &kb),
+            Action::MoveDown,
+            "Tab in EditForm should produce MoveDown"
+        );
+    }
+
+    #[test]
+    fn edit_form_backtab_maps_to_move_up() {
+        let kb = KeybindingsConfig::default();
+        let backtab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!(
+            map(backtab, &Mode::EditForm, &kb),
+            Action::MoveUp,
+            "BackTab in EditForm should produce MoveUp"
+        );
+    }
+
+    #[test]
+    fn edit_form_arrow_down_maps_to_move_down() {
+        let kb = KeybindingsConfig::default();
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(
+            map(down, &Mode::EditForm, &kb),
+            Action::MoveDown,
+            "Down arrow in EditForm should produce MoveDown"
+        );
+    }
+
+    #[test]
+    fn edit_form_arrow_up_maps_to_move_up() {
+        let kb = KeybindingsConfig::default();
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(
+            map(up, &Mode::EditForm, &kb),
+            Action::MoveUp,
+            "Up arrow in EditForm should produce MoveUp"
+        );
+    }
+
+    #[test]
+    fn edit_form_j_still_produces_text_input() {
+        let kb = KeybindingsConfig::default();
+        assert_eq!(
+            map(key('j'), &Mode::EditForm, &kb),
+            Action::Input('j'),
+            "bare 'j' in EditForm must still produce text Input, not navigation"
+        );
+    }
+
+    #[test]
+    fn edit_form_k_still_produces_text_input() {
+        let kb = KeybindingsConfig::default();
+        assert_eq!(
+            map(key('k'), &Mode::EditForm, &kb),
+            Action::Input('k'),
+            "bare 'k' in EditForm must still produce text Input, not navigation"
+        );
+    }
+
+    #[test]
+    fn search_mode_arrow_down_maps_to_move_down() {
+        let kb = KeybindingsConfig::default();
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(
+            map(down, &Mode::Search, &kb),
+            Action::MoveDown,
+            "Down arrow in Search should produce MoveDown"
+        );
+    }
+
+    #[test]
+    fn search_mode_arrow_up_maps_to_move_up() {
+        let kb = KeybindingsConfig::default();
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(
+            map(up, &Mode::Search, &kb),
+            Action::MoveUp,
+            "Up arrow in Search should produce MoveUp"
         );
     }
 

@@ -19,9 +19,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             Mode::Browse => {
                 "j/k move  h/l fold  / search  c copy  s reveal  a add  e edit  d del  q quit"
             }
-            Mode::Search => "type to filter  Enter select  Esc cancel",
+            Mode::Search => "type to filter  ↑↓ move  Enter select  Esc cancel",
             Mode::EditForm => {
-                "type to edit  Tab/jk fields  Ctrl-g generate  Enter save  Esc cancel"
+                "type to edit  Tab/↑↓ fields  Ctrl-g generate  Enter save  Esc cancel"
             }
             Mode::Confirm(_) => "y confirm  n cancel",
             Mode::Help => "q quit",
