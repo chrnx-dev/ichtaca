@@ -1,19 +1,19 @@
 //! Bottom status/help bar: keybinding hints + transient notifications.
 
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::state::{AppState, Mode, NoticeKind};
+use crate::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     let (text, style) = if let Some(n) = &state.notification {
-        let color = match n.kind {
-            NoticeKind::Info => Color::Green,
-            NoticeKind::Error => Color::Red,
+        let s = match n.kind {
+            NoticeKind::Info => theme::success(),
+            NoticeKind::Error => theme::error(),
         };
-        (n.text.clone(), Style::default().fg(color))
+        (n.text.clone(), s)
     } else {
         let hint = match state.mode {
             Mode::Browse => {
@@ -26,7 +26,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             Mode::Confirm(_) => "y confirm  n cancel",
             Mode::Help => "q quit",
         };
-        (hint.to_string(), Style::default())
+        (hint.to_string(), theme::hint())
     };
     frame.render_widget(Paragraph::new(text).style(style), area);
 }

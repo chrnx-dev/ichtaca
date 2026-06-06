@@ -8,39 +8,59 @@ mod statusbar;
 mod tree;
 
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::state::{AppState, Mode};
+use crate::theme;
 
 /// Draw the whole UI for the current state.
 /// `now_unix` is the current unix timestamp in seconds; it is forwarded to the
 /// detail panel so the OTP code and countdown are recomputed from the clock each
 /// frame rather than from a cached value.
 pub fn render(frame: &mut Frame, state: &AppState, now_unix: u64) {
+    // Outer split: header (1 line) | body | statusbar (1 line)
     let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1), // branding header
+            Constraint::Min(1),    // main content
+            Constraint::Length(1), // status bar
+        ])
         .split(frame.area());
 
+    // ── Branding header ──────────────────────────────────────────────────────
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled("ICHTACA", theme::title()),
+        Span::styled("  ·  lo oculto  ·", theme::hint()),
+    ]))
+    .style(Style::default().bg(theme::SURFACE).fg(theme::BG));
+    frame.render_widget(header, outer[0]);
+
+    // ── Main body ────────────────────────────────────────────────────────────
+    let body = outer[1];
+
     if matches!(state.mode, Mode::Help) {
-        modal::render_help(frame, outer[0]);
-        statusbar::render(frame, outer[1], state);
+        modal::render_help(frame, body);
+        statusbar::render(frame, outer[2], state);
         return;
     }
 
     let panels = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(outer[0]);
+        .split(body);
 
     tree::render(frame, panels[0], state);
     detail::render(frame, panels[1], state, now_unix);
-    statusbar::render(frame, outer[1], state);
+    statusbar::render(frame, outer[2], state);
 
     match &state.mode {
-        Mode::Search => search::render(frame, outer[0], state),
-        Mode::EditForm => form::render(frame, outer[0], state),
-        Mode::Confirm(c) => modal::render_confirm(frame, outer[0], c),
+        Mode::Search => search::render(frame, body, state),
+        Mode::EditForm => form::render(frame, body, state),
+        Mode::Confirm(c) => modal::render_confirm(frame, body, c),
         _ => {}
     }
 }
@@ -53,10 +73,11 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
-    /// Render the state into a 60×12 buffer and return a plain string for assertions.
+    /// Render the state into a 60×14 buffer and return a plain string for assertions.
+    /// (14 rows: 1 header + 12 body + 1 status bar)
     /// `now_unix` is passed to the detail panel for deterministic OTP rendering in tests.
     fn draw_at(state: &AppState, now_unix: u64) -> String {
-        let backend = TestBackend::new(60, 12);
+        let backend = TestBackend::new(60, 14);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| render(f, state, now_unix)).unwrap();
         let buf = terminal.backend().buffer().clone();
@@ -80,6 +101,30 @@ mod tests {
         let mut s = AppState::new();
         s.roots = EntryNode::from_paths(&["web/github.com".to_string(), "email/work".to_string()]);
         s
+    }
+
+    /// Branding header shows "ICHTACA" in the first row.
+    #[test]
+    fn header_shows_ichtaca() {
+        let s = browse_state();
+        let out = draw(&s);
+        let first_line = out.lines().next().unwrap_or("");
+        assert!(
+            first_line.contains("ICHTACA"),
+            "expected 'ICHTACA' in header row, got: {first_line:?}"
+        );
+    }
+
+    /// Branding header shows the subtitle in the first row.
+    #[test]
+    fn header_shows_subtitle() {
+        let s = browse_state();
+        let out = draw(&s);
+        let first_line = out.lines().next().unwrap_or("");
+        assert!(
+            first_line.contains("lo oculto"),
+            "expected 'lo oculto' in header row, got: {first_line:?}"
+        );
     }
 
     /// Asserts the tree panel title, detail panel title, and top-level dirs are visible.
