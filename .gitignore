@@ -5,3 +5,10 @@ Cargo.lock
 
 # Local-only: planes, specs, docs de LLM/agentes (no rastreados)
 /specs/
+
+# Frontend build artifacts (reproduce with: npm --prefix crates/pass-tauri/ui run build)
+crates/pass-tauri/ui/node_modules/
+crates/pass-tauri/ui/dist/
+
+# tsbuild output from composite tsconfig
+crates/pass-tauri/ui/.tsbuild-node/
