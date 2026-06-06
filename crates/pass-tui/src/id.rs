@@ -23,6 +23,8 @@ pub enum Id {
     FormField(usize),
     /// Template selector inside the create/edit form (Phase 3).
     FormTemplate,
+    /// Notes textarea in the create/edit form (Enhancement 2).
+    FormNotes,
     /// Delete-confirm dialog (Phase 3).
     ConfirmDialog,
 }

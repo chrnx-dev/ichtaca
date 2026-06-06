@@ -16,8 +16,8 @@ use tuirealm::ratatui::Frame;
 use tuirealm::terminal::TerminalAdapter;
 
 use crate::components::{
-    ConfirmModal, Detail, EntryTree, FormField, FormMode, Header, SearchInput, SearchResults,
-    StatusBar, TemplateModal,
+    ConfirmModal, Detail, EntryTree, FormField, FormMode, Header, NotesField, SearchInput,
+    SearchResults, StatusBar, TemplateModal,
 };
 use crate::id::Id;
 use crate::msg::Msg;
@@ -49,6 +49,9 @@ pub struct FormState {
     pub fields: Vec<(String, String)>,
     pub otp: String,
     pub tags: String,
+    /// Free-text / notes lines (multi-line, `\n`-joined).  Maps to the lines
+    /// in the entry text that are not password, key:value, otpauth, or @tags.
+    pub notes: String,
     /// Index of focused field in the form focus chain.
     pub focus_idx: usize,
     /// True when the password input is currently showing the plaintext.
@@ -67,18 +70,19 @@ pub struct FormState {
 impl FormState {
     /// Total number of focusable inputs.
     ///
-    /// Create: path(0) + password(1) + one value input per field + otp + tags.
-    /// Edit:   password(1) + one value input per field + otp + tags
+    /// Create: path(0) + password(1) + one value input per field + otp + tags + notes.
+    /// Edit:   password(1) + one value input per field + otp + tags + notes
     ///         (path is a static display, not a mounted input — Fix 2).
     ///
     /// Key labels are NOT focusable — they are rendered as static text.
+    /// The notes field is appended at the end of the chain.
     pub fn field_count(&self) -> usize {
         match self.mode {
-            FormMode::Create => 2 + self.fields.len() + 2,
+            FormMode::Create => 2 + self.fields.len() + 2 + 1, // +1 for notes
             // In Edit mode the path widget (index 0) is not mounted.
-            // The focusable inputs are: password + value fields + otp + tags
-            // = 1 + n + 2.  We still count from index 1 so the ids stay stable.
-            FormMode::Edit => 1 + self.fields.len() + 2,
+            // The focusable inputs are: password + value fields + otp + tags + notes
+            // = 1 + n + 2 + 1.  We still count from index 1 so the ids stay stable.
+            FormMode::Edit => 1 + self.fields.len() + 2 + 1,
         }
     }
 
@@ -91,6 +95,15 @@ impl FormState {
             FormMode::Create => 0,
             FormMode::Edit => 1,
         }
+    }
+
+    /// Focus chain index that corresponds to the notes textarea.
+    ///
+    /// This is the last index in the chain:
+    /// - Create: first(0) + count - 1
+    /// - Edit:   first(1) + count - 1
+    pub fn notes_focus_idx(&self) -> usize {
+        self.first_focus_idx() + self.field_count() - 1
     }
 }
 
@@ -327,9 +340,11 @@ impl Model {
                 f.render_widget(tuirealm::ratatui::widgets::Clear, popup);
 
                 // Gold-bordered surface panel for the form.
+                // Note: Enter saves from single-line fields; Ctrl-s saves from
+                // any field including the Notes textarea (where Enter = newline).
                 let form_title = match mode {
-                    FormMode::Create => " New Entry  [Enter save · Esc cancel · Ctrl-g generate · Tab path-complete] ",
-                    FormMode::Edit => " Edit Entry  [Enter save · Esc cancel · Ctrl-g generate] ",
+                    FormMode::Create => " New Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-g generate · Tab path-complete] ",
+                    FormMode::Edit => " Edit Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-g generate] ",
                 };
                 let popup_block = tuirealm::ratatui::widgets::Block::default()
                     .style(
@@ -366,7 +381,7 @@ impl Model {
                 //     value input              — 3 lines  (titled with the key, Fix 1)
                 //   otp input                  — 3 lines
                 //   tags input                 — 3 lines
-                //   fill spacer
+                //   notes textarea             — fill (remaining space)
                 let error_height = if form.error.is_some() { 1u16 } else { 0 };
                 let mut constraints: Vec<Constraint> = Vec::new();
                 if error_height > 0 {
@@ -386,7 +401,7 @@ impl Model {
                 // otp + tags
                 constraints.push(Constraint::Length(3));
                 constraints.push(Constraint::Length(3));
-                // spacer
+                // notes textarea — fill remaining space (Enhancement 2)
                 constraints.push(Constraint::Fill(1));
 
                 let parts = Layout::default()
@@ -477,6 +492,11 @@ impl Model {
                 part_idx += 1;
                 if app.mounted(&Id::FormField(tags_idx)) && part_idx < parts.len() {
                     app.view(&Id::FormField(tags_idx), f, parts[part_idx]);
+                }
+                part_idx += 1;
+                // Notes textarea (Enhancement 2) — Fill(1) slot at the end.
+                if app.mounted(&Id::FormNotes) && part_idx < parts.len() {
+                    app.view(&Id::FormNotes, f, parts[part_idx]);
                 }
                 let _ = part_idx; // suppress unused-variable warning
             }
@@ -945,11 +965,17 @@ impl Model {
             Overlay::Form(_) => {
                 // Unmount all mounted form fields.
                 // In Edit mode the path field (index 0) is NOT mounted, so we
-                // start from first_focus_idx() and unmount count fields (Fix 2).
+                // start from first_focus_idx().  The notes field (last in chain)
+                // uses Id::FormNotes, not Id::FormField.
                 let first = self.form.first_focus_idx();
+                let notes_idx = self.form.notes_focus_idx();
                 let count = self.form.field_count();
                 for i in first..(first + count) {
-                    let _ = self.app.umount(&Id::FormField(i));
+                    if i == notes_idx {
+                        let _ = self.app.umount(&Id::FormNotes);
+                    } else {
+                        let _ = self.app.umount(&Id::FormField(i));
+                    }
                 }
             }
             Overlay::Confirm => {
@@ -1001,12 +1027,24 @@ impl Model {
             .iter()
             .map(|k| (k.clone(), String::new()))
             .collect();
+
+        // Enhancement 1: pre-fill the path input with the directory that the
+        // currently-selected tree node belongs to.
+        let is_entry = self
+            .selected_path
+            .as_ref()
+            .map(|p| self.entry_paths.contains(p.as_str()))
+            .unwrap_or(false);
+        let path_prefix =
+            crate::domain::create_path_prefix(self.selected_path.as_deref(), is_entry);
+
         self.form = FormState {
-            path: String::new(),
+            path: path_prefix,
             password: String::new(),
             fields,
             otp: String::new(),
             tags: String::new(),
+            notes: String::new(),
             focus_idx: 0,
             pw_revealed: false,
             error: None,
@@ -1026,12 +1064,16 @@ impl Model {
                 let fields = entry.fields();
                 let otp = entry.otp_uri().unwrap_or("").to_string();
                 let tags = entry.tags().join(" ");
+                // Collect free-text (notes) lines — lines that are not the
+                // password, not key:value, not otpauth, and not @tags.
+                let notes = entry.notes_lines().join("\n");
                 self.form = FormState {
                     path: path.to_string(),
                     password: entry.password().to_string(),
                     fields,
                     otp,
                     tags,
+                    notes,
                     // Edit mode: start focus at password (index 1) since path
                     // is read-only and not in the focus chain (Fix 2).
                     focus_idx: 1,
@@ -1101,6 +1143,12 @@ impl Model {
             .mount(Id::FormField(tags_idx), Box::new(tags_field), vec![])
             .expect("mount Tags field");
 
+        // Notes textarea (last in the focus chain — Enhancement 2).
+        let notes_field = NotesField::new(&self.form.notes.clone());
+        self.app
+            .mount(Id::FormNotes, Box::new(notes_field), vec![])
+            .expect("mount Notes field");
+
         // Activate the first focusable field.
         // Create: index 0 (path); Edit: index 1 (password — Fix 2).
         let first = self.form.first_focus_idx();
@@ -1138,7 +1186,13 @@ impl Model {
         };
         let new_idx = first + new_pos;
         self.form.focus_idx = new_idx;
-        let _ = self.app.active(&Id::FormField(new_idx));
+        // The last position in the chain is the notes field (Id::FormNotes).
+        // All others are Id::FormField(idx).
+        if new_idx == self.form.notes_focus_idx() {
+            let _ = self.app.active(&Id::FormNotes);
+        } else {
+            let _ = self.app.active(&Id::FormField(new_idx));
+        }
     }
 
     /// Collect field values from mounted form widgets into `self.form`.
@@ -1195,6 +1249,12 @@ impl Model {
             self.app.state(&Id::FormField(tags_idx))
         {
             self.form.tags = v;
+        }
+        // Notes (Id::FormNotes — Enhancement 2): multi-line text.
+        if let Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(v))) =
+            self.app.state(&Id::FormNotes)
+        {
+            self.form.notes = v;
         }
     }
 
@@ -1265,6 +1325,13 @@ impl Model {
             .map(|s| s.to_string())
             .collect();
         entry.set_tags(&tags);
+        // Enhancement 2: replace notes lines with the textarea content.
+        let note_lines: Vec<String> = if self.form.notes.is_empty() {
+            Vec::new()
+        } else {
+            self.form.notes.lines().map(|l| l.to_string()).collect()
+        };
+        entry.set_notes(&note_lines);
 
         let serialized = entry.serialize();
         let secret = passcore::Secret::from(serialized.as_str());
@@ -1370,6 +1437,8 @@ fn longest_common_prefix(strs: &[String]) -> String {
 /// <key>: <value>
 /// [otpauth://...]
 /// [@tag1 @tag2]
+/// [notes line 1]
+/// [notes line 2]
 /// ```
 fn build_secret(form: &FormState) -> passcore::Secret {
     let mut lines = vec![form.password.clone()];
@@ -1389,6 +1458,12 @@ fn build_secret(form: &FormState) -> passcore::Secret {
             .collect::<Vec<_>>()
             .join(" ");
         lines.push(tag_line);
+    }
+    // Enhancement 2: append notes lines (if any) after tags.
+    if !form.notes.is_empty() {
+        for note_line in form.notes.lines() {
+            lines.push(note_line.to_string());
+        }
     }
     let mut text = lines.join("\n");
     text.push('\n');
@@ -1646,6 +1721,7 @@ mod tests {
             ],
             otp: String::new(),
             tags: "work personal".to_string(),
+            notes: String::new(),
             focus_idx: 0,
             pw_revealed: false,
             error: None,
@@ -1674,6 +1750,7 @@ mod tests {
             fields: vec![("user".to_string(), "bob".to_string())],
             otp: String::new(),
             tags: String::new(),
+            notes: String::new(),
             focus_idx: 0,
             pw_revealed: false,
             error: None,
@@ -1786,12 +1863,17 @@ mod tests {
         let mut model = test_model(store);
         // selected_path must be set to the target entry (save_edit reads it).
         model.selected_path = Some("web/x".to_string());
+        // With Enhancement 2 the edit form is aware of notes.  The form's
+        // `notes` field must carry the free-text lines so they survive the
+        // round-trip.  (In production this is populated by `open_edit_form`
+        // from `entry.notes_lines()`.  In this unit test we set it manually.)
         model.form = FormState {
             path: "web/x".to_string(),
             password: "newpw".to_string(),
             fields: vec![("user".to_string(), "bob".to_string())],
             otp: String::new(),
             tags: "home".to_string(),
+            notes: "some unknown note".to_string(),
             focus_idx: 0,
             pw_revealed: false,
             error: None,
@@ -1809,10 +1891,10 @@ mod tests {
             Some("bob"),
             "user field must be updated"
         );
-        // The unknown note line must survive the round-trip.
+        // The note line must survive the round-trip (carried through form.notes).
         assert!(
             entry.serialize().contains("some unknown note"),
-            "unknown line must be preserved in round-trip"
+            "note line must be preserved in round-trip"
         );
         // @home tag must be set.
         assert!(
@@ -2221,6 +2303,7 @@ mod tests {
             fields: vec![("user".to_string(), "alice_updated".to_string())],
             otp: String::new(),
             tags: String::new(),
+            notes: String::new(),
             focus_idx: 0,
             pw_revealed: false,
             error: None,
@@ -2350,7 +2433,7 @@ mod tests {
 
     // ── Fix 1 + 2: FormState field_count / first_focus_idx ───────────────────
 
-    /// In Create mode: field_count = 2 + n_fields + 2; first = 0.
+    /// In Create mode: field_count = 2 + n_fields + 2 + 1 (notes); first = 0.
     #[test]
     fn form_state_create_field_count_and_first_focus() {
         let state = FormState {
@@ -2361,16 +2444,18 @@ mod tests {
             ],
             ..FormState::default()
         };
-        // 2 (path+pw) + 2 (fields) + 2 (otp+tags) = 6
-        assert_eq!(state.field_count(), 6);
+        // 2 (path+pw) + 2 (fields) + 2 (otp+tags) + 1 (notes) = 7
+        assert_eq!(state.field_count(), 7);
         assert_eq!(
             state.first_focus_idx(),
             0,
             "Create starts at index 0 (path)"
         );
+        // Notes is the last focus index: first(0) + count(7) - 1 = 6
+        assert_eq!(state.notes_focus_idx(), 6, "notes at index 6 in Create");
     }
 
-    /// In Edit mode: field_count = 1 + n_fields + 2; first = 1 (password).
+    /// In Edit mode: field_count = 1 + n_fields + 2 + 1 (notes); first = 1 (password).
     #[test]
     fn form_state_edit_field_count_and_first_focus() {
         let state = FormState {
@@ -2382,13 +2467,15 @@ mod tests {
             focus_idx: 1,
             ..FormState::default()
         };
-        // 1 (pw) + 2 (fields) + 2 (otp+tags) = 5
-        assert_eq!(state.field_count(), 5);
+        // 1 (pw) + 2 (fields) + 2 (otp+tags) + 1 (notes) = 6
+        assert_eq!(state.field_count(), 6);
         assert_eq!(
             state.first_focus_idx(),
             1,
             "Edit starts at index 1 (password)"
         );
+        // Notes is the last focus index: first(1) + count(6) - 1 = 6
+        assert_eq!(state.notes_focus_idx(), 6, "notes at index 6 in Edit");
     }
 
     // ── Fix 3: longest_common_prefix helper ──────────────────────────────────
