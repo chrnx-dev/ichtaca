@@ -36,16 +36,16 @@
 </script>
 
 <nav class="tree-panel py-1" aria-label="Password entries">
-  <ul role="tree" class="menu menu-xs p-0 gap-0 w-full">
+  <ul role="tree" class="list-none m-0 p-0 w-full">
     {#each tree as node (node.name)}
       <li role="treeitem" aria-selected={node.path === selectedPath} aria-expanded={node.children.length > 0 ? expanded.has(node.name) : undefined}>
         {#if node.path !== null}
           <!-- Leaf entry -->
           <button
-            class="entry-leaf flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded transition-colors
+            class="entry-leaf flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm bg-transparent border-0 transition-colors focus:outline-none
               {node.path === selectedPath
-                ? 'selected bg-base-200 text-primary font-semibold'
-                : 'text-base-content hover:bg-base-200/60 hover:text-primary/80'}"
+                ? 'selected text-primary font-semibold'
+                : 'text-base-content hover:text-primary'}"
             onclick={() => onselect(node.path!)}
             onkeydown={(e) => handleKeydown(e, node)}
             aria-current={node.path === selectedPath ? 'true' : undefined}
@@ -59,8 +59,8 @@
         {:else}
           <!-- Directory -->
           <button
-            class="entry-dir flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm font-semibold rounded transition-colors
-              text-base-content/80 hover:bg-base-200/40 hover:text-base-content"
+            class="entry-dir flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm font-semibold bg-transparent border-0 transition-colors focus:outline-none
+              text-base-content/80 hover:text-primary"
             onclick={() => toggleDir(node.name)}
             onkeydown={(e) => handleKeydown(e, node)}
             aria-label="Toggle directory {node.name}"
