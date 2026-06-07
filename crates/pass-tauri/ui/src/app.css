@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Ichtaca global overrides ─────────────────────────────────────────────── */
+
+/* Page / html background = obsidian #15131A */
+html, body {
+  background-color: #15131A;
+  min-height: 100vh;
+}
+
+/* Ensure the app fills the viewport */
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Monospace for passwords / codes */
+.font-mono-pw {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  letter-spacing: 0.05em;
+}
