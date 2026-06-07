@@ -97,172 +97,108 @@
   });
 </script>
 
-<section class="detail-panel">
+<section class="detail-panel p-5 h-full overflow-y-auto">
   {#if meta === null}
-    <p class="placeholder">Select an entry to view details.</p>
+    <div class="flex items-center justify-center h-full">
+      <p class="text-neutral italic text-sm">Select an entry to view details.</p>
+    </div>
   {:else}
-    <h2 class="entry-title">{meta.path}</h2>
-
-    <!-- Password row -->
-    <div class="field-row password-row">
-      <span class="field-key">password</span>
-      <span class="field-value password-value" data-testid="password-display">
-        {#if revealedPassword !== null}
-          <span class="revealed" data-testid="password-revealed">{revealedPassword}</span>
-        {:else}
-          <span class="masked" data-testid="password-masked" aria-label="Password hidden">••••••••</span>
-        {/if}
-      </span>
-      <div class="field-actions">
-        <button
-          class="btn-sm"
-          onclick={handleReveal}
-          disabled={isRevealing}
-          data-testid="reveal-button"
-        >
-          {revealedPassword !== null ? 'Hide' : 'Reveal'}
-        </button>
-        <button
-          class="btn-sm"
-          onclick={handleCopy}
-          data-testid="copy-button"
-        >
-          Copy
-        </button>
-      </div>
+    <!-- Entry title -->
+    <div class="mb-5">
+      <h2 class="text-primary font-bold text-base tracking-wide break-all">{meta.path}</h2>
+      <div class="h-px bg-neutral/20 mt-2"></div>
     </div>
 
-    <!-- Fields -->
-    {#each meta.fields as [key, value]}
-      <div class="field-row">
-        <span class="field-key">{key}</span>
-        <span class="field-value">{value}</span>
-      </div>
-    {/each}
+    <!-- Card wrapping all fields -->
+    <div class="card bg-base-100 shadow-md">
+      <div class="card-body p-4 gap-3">
 
-    <!-- Tags -->
-    {#if meta.tags.length > 0}
-      <div class="tags-row">
-        {#each meta.tags as tag}
-          <span class="tag">@{tag}</span>
-        {/each}
-      </div>
-    {/if}
+        <!-- Password row -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-neutral text-xs font-semibold uppercase tracking-wider min-w-[5.5rem] flex-shrink-0">password</span>
+          <span class="flex-1 font-mono text-sm" data-testid="password-display">
+            {#if revealedPassword !== null}
+              <span class="text-[#F2C66D] select-text break-all" data-testid="password-revealed">{revealedPassword}</span>
+            {:else}
+              <span class="text-neutral tracking-[0.2em]" data-testid="password-masked" aria-label="Password hidden">••••••••</span>
+            {/if}
+          </span>
+          <div class="flex gap-1.5 flex-shrink-0">
+            <button
+              class="btn btn-xs btn-ghost border border-neutral/30 text-base-content/80"
+              onclick={handleReveal}
+              disabled={isRevealing}
+              data-testid="reveal-button"
+            >
+              <!-- Eye icon -->
+              {#if revealedPassword !== null}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd"/>
+                  <path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"/>
+                </svg>
+                Hide
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+                  <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
+                </svg>
+                Reveal
+              {/if}
+            </button>
+            <button
+              class="btn btn-xs btn-ghost border border-neutral/30 text-base-content/80"
+              onclick={handleCopy}
+              data-testid="copy-button"
+            >
+              <!-- Copy icon -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/>
+                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+        </div>
 
-    <!-- OTP -->
-    {#if meta.has_otp}
-      <div class="otp-row" data-testid="otp-section">
-        <span class="field-key">OTP</span>
-        {#if otp}
-          <span class="otp-code" data-testid="otp-code">{otp.code}</span>
-          <span class="otp-timer" data-testid="otp-countdown">{otpCountdown}s</span>
-        {:else}
-          <span class="otp-loading">Loading…</span>
+        <!-- Divider -->
+        {#if meta.fields.length > 0 || meta.tags.length > 0 || meta.has_otp}
+          <div class="h-px bg-neutral/15"></div>
         {/if}
+
+        <!-- Fields -->
+        {#each meta.fields as [key, value]}
+          <div class="flex items-start gap-3">
+            <span class="text-neutral text-xs font-semibold uppercase tracking-wider min-w-[5.5rem] flex-shrink-0 pt-0.5">{key}</span>
+            <span class="text-base-content text-sm break-all flex-1">{value}</span>
+          </div>
+        {/each}
+
+        <!-- Tags -->
+        {#if meta.tags.length > 0}
+          <div class="flex items-center gap-2 flex-wrap mt-1">
+            <span class="text-neutral text-xs font-semibold uppercase tracking-wider min-w-[5.5rem] flex-shrink-0">tags</span>
+            <div class="flex gap-1.5 flex-wrap">
+              {#each meta.tags as tag}
+                <span class="badge badge-sm text-[#3FA66A] border-[#3FA66A]/40 bg-[#3FA66A]/10">@{tag}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- OTP -->
+        {#if meta.has_otp}
+          <div class="flex items-center gap-3 mt-1" data-testid="otp-section">
+            <span class="text-neutral text-xs font-semibold uppercase tracking-wider min-w-[5.5rem] flex-shrink-0">OTP</span>
+            {#if otp}
+              <span class="font-mono text-xl font-bold text-[#46D0C0] tracking-[0.15em]" data-testid="otp-code">{otp.code}</span>
+              <span class="text-[#2FB6A8] text-xs ml-1" data-testid="otp-countdown">{otpCountdown}s</span>
+            {:else}
+              <span class="text-neutral italic text-sm">Loading…</span>
+            {/if}
+          </div>
+        {/if}
+
       </div>
-    {/if}
+    </div>
   {/if}
 </section>
-
-<style>
-  .detail-panel {
-    padding: 1rem;
-    overflow-y: auto;
-    height: 100%;
-  }
-  .placeholder {
-    color: #888;
-    font-style: italic;
-  }
-  .entry-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin: 0 0 1rem;
-    word-break: break-all;
-  }
-  .field-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.4rem;
-    font-size: 0.9rem;
-  }
-  .field-key {
-    font-weight: 600;
-    min-width: 7rem;
-    color: #555;
-    flex-shrink: 0;
-  }
-  .field-value {
-    flex: 1;
-    word-break: break-all;
-  }
-  .password-row {
-    flex-wrap: wrap;
-  }
-  .password-value {
-    font-family: monospace;
-    letter-spacing: 0.05em;
-  }
-  .masked {
-    letter-spacing: 0.2em;
-    color: #888;
-  }
-  .revealed {
-    color: #c62828;
-    user-select: text;
-  }
-  .field-actions {
-    display: flex;
-    gap: 0.35rem;
-    flex-shrink: 0;
-  }
-  .btn-sm {
-    padding: 0.15rem 0.5rem;
-    font-size: 0.8rem;
-    border: 1px solid #bbb;
-    border-radius: 3px;
-    background: #fafafa;
-    cursor: pointer;
-  }
-  .btn-sm:hover {
-    background: #e0e0e0;
-  }
-  .btn-sm:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .tags-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-top: 0.5rem;
-  }
-  .tag {
-    background: #e3f2fd;
-    color: #1565c0;
-    border-radius: 3px;
-    padding: 0.1rem 0.4rem;
-    font-size: 0.8rem;
-  }
-  .otp-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-  .otp-code {
-    font-family: monospace;
-    font-size: 1.3rem;
-    font-weight: 700;
-    letter-spacing: 0.15em;
-  }
-  .otp-timer {
-    font-size: 0.85rem;
-    color: #888;
-  }
-  .otp-loading {
-    color: #888;
-    font-style: italic;
-  }
-</style>

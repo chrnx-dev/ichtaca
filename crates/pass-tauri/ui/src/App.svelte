@@ -130,50 +130,82 @@
   });
 </script>
 
-<div class="app-layout">
-  <header class="app-header">
-    <h1>pass-tauri</h1>
-    <div class="search-wrapper">
+<div class="flex flex-col h-screen bg-[#15131A] text-base-content">
+  <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
+  <div class="navbar bg-base-100 border-b border-neutral/30 flex-shrink-0 min-h-12 px-3 gap-3">
+    <!-- Brand -->
+    <div class="flex-shrink-0 flex items-baseline gap-1.5">
+      <span class="text-primary font-bold tracking-widest text-sm uppercase">ICHTACA</span>
+      <span class="text-neutral text-xs">· lo oculto</span>
+    </div>
+
+    <!-- Search -->
+    <div class="flex-1 max-w-xs relative">
       <SearchBar onselect={handleSearchSelect} onclear={handleSearchClear} />
     </div>
-    <div class="header-actions">
-      <button class="btn-header" onclick={handleNew} data-testid="new-button">
-        + New
+
+    <!-- Actions -->
+    <div class="flex-shrink-0 flex items-center gap-1.5">
+      <button
+        class="btn btn-xs btn-primary"
+        onclick={handleNew}
+        data-testid="new-button"
+      >
+        <!-- Plus icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
+        </svg>
+        New
       </button>
       <button
-        class="btn-header"
+        class="btn btn-xs btn-ghost border border-neutral/40 text-base-content"
         onclick={handleEdit}
         disabled={selectedPath === null}
         data-testid="edit-button"
       >
+        <!-- Pencil icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+        </svg>
         Edit
       </button>
       <button
-        class="btn-header btn-danger"
+        class="btn btn-xs btn-error btn-outline"
         onclick={handleDeleteRequest}
         disabled={selectedPath === null}
         data-testid="delete-button"
       >
+        <!-- Trash icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
         Delete
       </button>
     </div>
-  </header>
+  </div>
 
-  <main class="app-body">
-    <aside class="sidebar">
+  <!-- ── Main two-pane layout ──────────────────────────────────────────────── -->
+  <main class="flex flex-1 overflow-hidden">
+    <!-- Sidebar / Tree -->
+    <aside class="w-64 flex-shrink-0 bg-base-100 border-r border-neutral/20 overflow-y-auto">
       {#if isLoading}
-        <p class="loading">Loading…</p>
+        <div class="flex items-center justify-center h-20">
+          <span class="loading loading-spinner loading-sm text-primary"></span>
+          <span class="ml-2 text-neutral text-sm">Loading…</span>
+        </div>
       {:else}
         <TreePanel {tree} {selectedPath} onselect={loadEntry} />
       {/if}
     </aside>
 
-    <section class="detail-area">
+    <!-- Detail pane -->
+    <section class="flex-1 overflow-y-auto bg-[#15131A]">
       <DetailPanel {meta} onnotice={showNotice} onerror={showError} />
     </section>
   </main>
 
-  <footer class="app-footer">
+  <!-- ── Status footer ─────────────────────────────────────────────────────── -->
+  <footer class="flex-shrink-0">
     <StatusBar message={statusMessage} kind={statusKind} />
   </footer>
 </div>
@@ -205,92 +237,3 @@
     oncancel={() => { showDeleteModal = false; }}
   />
 {/if}
-
-<style>
-  :global(*, *::before, *::after) {
-    box-sizing: border-box;
-  }
-  :global(body) {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-    background: #fafafa;
-    color: #222;
-  }
-  .app-layout {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  .app-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
-    background: #1565c0;
-    color: white;
-    flex-shrink: 0;
-  }
-  .app-header h1 {
-    margin: 0;
-    font-size: 1.1rem;
-    white-space: nowrap;
-  }
-  .search-wrapper {
-    flex: 1;
-    max-width: 22rem;
-    position: relative;
-  }
-  .header-actions {
-    display: flex;
-    gap: 0.4rem;
-    flex-shrink: 0;
-  }
-  .btn-header {
-    padding: 0.25rem 0.7rem;
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 4px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-  .btn-header:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.28);
-  }
-  .btn-header:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .btn-danger {
-    background: rgba(198, 40, 40, 0.5);
-    border-color: rgba(239, 154, 154, 0.5);
-  }
-  .btn-danger:hover:not(:disabled) {
-    background: rgba(183, 28, 28, 0.7);
-  }
-  .app-body {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
-  .sidebar {
-    width: 260px;
-    border-right: 1px solid #ddd;
-    overflow-y: auto;
-    background: #fff;
-    flex-shrink: 0;
-  }
-  .detail-area {
-    flex: 1;
-    overflow-y: auto;
-    background: #fff;
-  }
-  .app-footer {
-    flex-shrink: 0;
-  }
-  .loading {
-    padding: 1rem;
-    color: #888;
-  }
-</style>
