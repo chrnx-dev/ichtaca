@@ -11,9 +11,12 @@ use crate::state::AppState;
 pub fn copy_password_impl(state: &AppState, path: String) -> CommandResult<()> {
     // Fetch the raw secret first — this must succeed even when no clipboard
     // is available, and is what we test on headless CI.
-    let secret = {
+    let password = {
         let store = state.store();
-        store.show_raw(&path).map_err(CommandError::from)?
+        let secret = store.show_raw(&path).map_err(CommandError::from)?;
+        // Copy only the first line (the password), not the whole entry.
+        // `secret` is zeroized when it drops at the end of this block.
+        passcore::Secret::from(secret.first_line())
     };
 
     let backend = passcore::clipboard::default_backend().map_err(|e| CommandError {
@@ -21,7 +24,7 @@ pub fn copy_password_impl(state: &AppState, path: String) -> CommandResult<()> {
     })?;
 
     let timeout = Duration::from_secs(state.config.clipboard.clear_after);
-    passcore::clipboard::copy_and_autoclear(Arc::from(backend), &secret, timeout).map_err(|e| {
+    passcore::clipboard::copy_and_autoclear(Arc::from(backend), &password, timeout).map_err(|e| {
         CommandError {
             message: e.to_string(),
         }
@@ -61,6 +64,28 @@ mod tests {
             err.message.contains("no/such") || err.message.to_lowercase().contains("not found"),
             "unexpected error message: {}",
             err.message
+        );
+    }
+
+    /// Copying an entry with metadata lines must only put the first line (the
+    /// password) onto the clipboard, never the entire secret text.
+    #[test]
+    fn copy_password_extracts_only_first_line() {
+        // Verify the first-line extraction logic independently of clipboard
+        // availability: Secret::from(secret.first_line()) must equal the
+        // password, not the whole multi-line entry.
+        let raw = passcore::Secret::from("pw\nuser: bob\nurl: example.com\n");
+        let password = passcore::Secret::from(raw.first_line());
+        assert_eq!(
+            password.expose_str(),
+            "pw",
+            "first_line must return only the password, not the full entry"
+        );
+        // Whole-entry text must differ (i.e. we're not accidentally copying it).
+        assert_ne!(
+            raw.expose_str(),
+            password.expose_str(),
+            "password-only secret must differ from the full entry text"
         );
     }
 
