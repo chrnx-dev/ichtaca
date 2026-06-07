@@ -155,6 +155,11 @@ impl PasswordStore for PassCliStore {
             };
             let rel_str = rel.to_string_lossy().replace('\\', "/");
             let trimmed = rel_str.strip_suffix(".gpg").unwrap_or(&rel_str).to_string();
+            // Skip stray empty-stem files (e.g. a literal `.gpg` at root or
+            // inside a directory, which produce an empty or trailing-slash path).
+            if trimmed.is_empty() || trimmed.ends_with('/') {
+                continue;
+            }
             paths.push(trimmed);
         }
         paths.sort();
@@ -187,6 +192,10 @@ impl PasswordStore for PassCliStore {
     fn insert(&mut self, path: &str, contents: &Secret, overwrite: bool) -> Result<()> {
         use std::io::Write;
         use std::process::{Command, Stdio};
+
+        if path.trim().is_empty() {
+            return Err(PassError::Parse("entry path must not be empty".to_string()));
+        }
 
         if !overwrite && self.list()?.iter().any(|p| p == path) {
             return Err(PassError::AlreadyExists(path.to_string()));
@@ -276,6 +285,9 @@ impl PasswordStore for PassCliStore {
     }
 
     fn generate(&mut self, path: &str, len: usize, symbols: bool) -> Result<Secret> {
+        if path.trim().is_empty() {
+            return Err(PassError::Parse("entry path must not be empty".to_string()));
+        }
         let out = self.run_pass(path, &generate_args(path, len, symbols, true))?;
         // `pass generate` prints the password (often with ANSI). Take the last
         // non-empty line and strip ANSI escapes defensively.
@@ -379,5 +391,68 @@ mod tests {
         std::fs::write(root.join("weird.gpg.gpg"), b"x").unwrap();
         let store = PassCliStore::with_store_dir(root.to_path_buf());
         assert_eq!(store.list().unwrap(), vec!["weird.gpg"]);
+    }
+
+    // ── Fix 2: empty-path guard ───────────────────────────────────────────────
+
+    /// `insert` with an empty path must return `PassError::Parse` immediately,
+    /// before any `pass` invocation (no binary needed — guard fires first).
+    #[test]
+    fn insert_rejects_empty_path() {
+        let tmp = tempdir().unwrap();
+        let mut store = PassCliStore::with_store_dir(tmp.path().to_path_buf());
+        let secret = crate::secret::Secret::from("hunter2");
+        let err = store.insert("", &secret, false).unwrap_err();
+        assert!(
+            matches!(err, crate::error::PassError::Parse(_)),
+            "expected Parse error for empty path, got: {err:?}"
+        );
+    }
+
+    /// `insert` with a whitespace-only path must also be rejected.
+    #[test]
+    fn insert_rejects_whitespace_path() {
+        let tmp = tempdir().unwrap();
+        let mut store = PassCliStore::with_store_dir(tmp.path().to_path_buf());
+        let secret = crate::secret::Secret::from("hunter2");
+        let err = store.insert("   ", &secret, false).unwrap_err();
+        assert!(
+            matches!(err, crate::error::PassError::Parse(_)),
+            "expected Parse error for whitespace-only path, got: {err:?}"
+        );
+    }
+
+    /// `generate` with an empty path must return `PassError::Parse` immediately.
+    #[test]
+    fn generate_rejects_empty_path() {
+        let tmp = tempdir().unwrap();
+        let mut store = PassCliStore::with_store_dir(tmp.path().to_path_buf());
+        let err = store.generate("", 16, false).unwrap_err();
+        assert!(
+            matches!(err, crate::error::PassError::Parse(_)),
+            "expected Parse error for empty path in generate, got: {err:?}"
+        );
+    }
+
+    // ── Fix 3: list skips empty-stem .gpg files ───────────────────────────────
+
+    /// A file literally named `.gpg` (empty stem) must be silently skipped;
+    /// only normal entries like `foo.gpg` are returned.
+    #[test]
+    fn list_skips_empty_stem_gpg_file() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        // Stray file with an empty stem — mimics the bug where an empty path
+        // caused `pass insert` to create `~/.password-store/.gpg`.
+        std::fs::write(root.join(".gpg"), b"x").unwrap();
+        // Normal entry alongside the stray file.
+        std::fs::write(root.join("foo.gpg"), b"x").unwrap();
+
+        let store = PassCliStore::with_store_dir(root.to_path_buf());
+        assert_eq!(
+            store.list().unwrap(),
+            vec!["foo"],
+            "list must skip the empty-stem .gpg file and return only 'foo'"
+        );
     }
 }
