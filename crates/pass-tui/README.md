@@ -33,8 +33,15 @@ family = "JetBrainsMono Nerd Font"
 ## Running
 
 ```sh
+# Run by Cargo package (works regardless of binary name)
 cargo run -p pass-tui
+
+# Or install (produces the `ichtaca` binary in ~/.cargo/bin/)
+cargo install --path crates/pass-tui
+ichtaca
 ```
+
+The produced binary is named **`ichtaca`** (`target/debug/ichtaca` after `cargo build -p pass-tui`). The Cargo package name remains `pass-tui`.
 
 ## Key bindings (browse mode)
 

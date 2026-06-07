@@ -1,6 +1,8 @@
-# pass-tauri
+# pass-tauri (Ichtaca desktop)
 
 Tauri 2 desktop client for the pass-client workspace. Embeds the Svelte UI (`ui/`) at compile time and exposes password-store operations via Tauri IPC commands backed by `passcore`.
+
+The produced binary is named **`ichtaca-desktop`** (`cargo run -p pass-tauri` still works). The macOS app bundle and installer display name is **Ichtaca** with bundle identifier `dev.chrnx.ichtaca`.
 
 ---
 
@@ -26,12 +28,14 @@ Tauri 2 desktop client for the pass-client workspace. Embeds the Svelte UI (`ui/
 # 1. Build the frontend
 npm --prefix crates/pass-tauri/ui run build
 
-# 2. Build the Rust crate (debug or release)
+# 2. Build the Rust crate (debug or release) → produces target/debug/ichtaca-desktop
 cargo build -p pass-tauri
 cargo build --release -p pass-tauri
 ```
 
 If `ui/dist` is absent when `cargo build` runs, the build will fail because `tauri.conf.json` points `frontendDist` at `ui/dist`.
+
+> `cargo run -p pass-tauri` continues to work (Cargo resolves by package). The installed binary name is `ichtaca-desktop`.
 
 ---
 
@@ -43,7 +47,7 @@ If `ui/dist` is absent when `cargo build` runs, the build will fail because `tau
 # Build the UI in watch mode (separate terminal)
 npm --prefix crates/pass-tauri/ui run dev   # Vite dev server on localhost:1420 (or similar)
 
-# Build and run the native binary
+# Build and run the native binary (produces ichtaca-desktop)
 cargo run -p pass-tauri
 ```
 
