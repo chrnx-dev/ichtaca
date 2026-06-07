@@ -5,7 +5,7 @@
   "identifier": "dev.chrnx.ichtaca",
   "build": {
     "frontendDist": "ui/dist",
-    "beforeBuildCommand": "npm --prefix ui run build"
+    "beforeBuildCommand": ""
   },
   "app": {
     "windows": [

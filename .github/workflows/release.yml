@@ -81,8 +81,16 @@ jobs:
           echo "TUI_TARBALL=${dist}.tar.gz" >> "$GITHUB_ENV"
 
       # ── Desktop app (`ichtaca-desktop` / Ichtaca.app) ─────────────────────
-      # tauri-action runs the UI build (beforeBuildCommand), builds the bundles,
-      # creates the release (prerelease draft) and uploads the bundles.
+      # Build the frontend explicitly (beforeBuildCommand is empty so the build
+      # is deterministic regardless of tauri-action's working directory). This
+      # produces crates/pass-tauri/ui/dist, which tauri then bundles.
+      - name: Build frontend (Svelte/Vite)
+        run: |
+          npm --prefix crates/pass-tauri/ui ci
+          npm --prefix crates/pass-tauri/ui run build
+
+      # tauri-action builds the bundles, creates the release (prerelease draft)
+      # and uploads the bundles.
       - name: Build & upload desktop app (Tauri)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:

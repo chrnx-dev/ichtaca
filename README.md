@@ -106,12 +106,18 @@ GitHub Release.
 
 The frontend build requires Node (v22 recommended). If `node`/`npm` are shell functions wrapping another version manager, ensure the real binaries are on `PATH` before running `npm`.
 
-#### Development mode (with Tauri CLI)
+#### Development mode
+
+Build the frontend first (the Rust crate embeds `ui/dist` at compile time), then run:
 
 ```sh
-cd crates/pass-tauri
-cargo tauri dev   # builds UI automatically via beforeBuildCommand
+npm --prefix crates/pass-tauri/ui run build
+cargo run -p pass-tauri
 ```
+
+> The Tauri `beforeBuildCommand` is intentionally empty so the frontend build is
+> explicit and deterministic in CI — always build the UI before building/bundling
+> the Rust crate.
 
 ---
 
