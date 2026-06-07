@@ -81,6 +81,27 @@ cargo tauri build
 
 Tauri only bundles for the **host OS**: `app`/`dmg` on macOS, `deb`/`appimage` on Linux.
 
+#### Opening the macOS app (alpha is unsigned)
+
+The alpha `.dmg`/`.app` is **not code-signed or notarized** yet, so macOS Gatekeeper
+will block it on first launch ("unidentified developer" / "damaged"). To open it:
+
+- **Right-click** (or Control-click) the app → **Open** → **Open** (only needed once), **or**
+- remove the quarantine flag from a terminal:
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/Ichtaca.app
+  ```
+
+A properly signed + notarized build (no warning) requires an Apple Developer ID;
+the release workflow signs automatically once the Apple secrets are configured.
+
+#### Releases & artifacts
+
+Pushing a tag like `v26.6.0-alpha` triggers `.github/workflows/release.yml`, which
+builds the desktop bundles (macOS `.dmg`, Linux `.deb`/`.AppImage`) and the TUI
+binary tarballs for macOS (arm64 + Intel) and Linux, and attaches them to a draft
+GitHub Release.
+
 #### Node version note
 
 The frontend build requires Node (v22 recommended). If `node`/`npm` are shell functions wrapping another version manager, ensure the real binaries are on `PATH` before running `npm`.
