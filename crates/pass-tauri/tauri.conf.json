@@ -21,10 +21,21 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "deb", "appimage"],
-    "icon": ["icons/icon.png"],
+    "targets": [
+      "app",
+      "dmg",
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "Utility",
     "shortDescription": "A secure password manager desktop client",
-    "longDescription": "pass-tauri is a Tauri-based desktop client for pass-compatible password stores. It provides a secure, native interface for managing encrypted credentials with backend-only secret handling — passwords and OTP URIs never leave the Rust process until explicitly requested."
+    "longDescription": "pass-tauri is a Tauri-based desktop client for pass-compatible password stores. It provides a secure, native interface for managing encrypted credentials with backend-only secret handling \u2014 passwords and OTP URIs never leave the Rust process until explicitly requested."
   }
 }
