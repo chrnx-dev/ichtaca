@@ -653,11 +653,15 @@ impl Model {
 
             Some(Msg::SearchPick(path)) => {
                 self.close_overlay();
+                // Load the detail panel for the picked entry.
                 self.load_detail(&path);
                 self.reveal = false;
                 self.notice = None;
-                // Activate tree so normal browse keys work again
-                let _ = self.app.active(&Id::Tree);
+                // Remount the tree with the picked entry as the initial node so
+                // the treeview highlights it and opens its ancestor folders —
+                // otherwise the selection stays invisible in the left panel.
+                // This also re-activates Id::Tree so browse keys work again.
+                self.remount_tree(Some(path));
                 self.redraw = true;
                 None
             }
@@ -1414,13 +1418,33 @@ impl Model {
     }
 
     /// Reload the tree widget from the store listing.
+    ///
+    /// Keeps `entry_paths` in sync with the store after any mutation, then
+    /// remounts the tree preserving the current selection (falling back to the
+    /// first leaf when nothing is selected).
     fn reload_tree(&mut self) {
         // Keep entry_paths in sync with the store after any mutation.
         self.entry_paths = self.store.list().unwrap_or_default().into_iter().collect();
+        let selected = self.selected_path.clone();
+        self.remount_tree(selected);
+    }
+
+    /// Rebuild and remount the `Id::Tree` component from the current store
+    /// paths, selecting `selected` (and opening its ancestor folders).
+    ///
+    /// `tui_realm_treeview`'s `initial_node` both **selects** the given node and
+    /// **opens the path of ancestors** leading to it, so passing the picked
+    /// entry's id is enough to reveal it in the left panel. When `selected` is
+    /// `None` (or not present in the tree) it falls back to the first leaf.
+    ///
+    /// Safe to call before the tree is first mounted (e.g. in unit tests): the
+    /// `umount` is best-effort and the subsequent `mount` establishes the
+    /// component.
+    fn remount_tree(&mut self, selected: Option<String>) {
         let tree = build_store_tree(self.store.as_ref());
-        let initial = self.selected_path.clone().or_else(|| first_leaf_id(&tree));
+        let initial = selected.or_else(|| first_leaf_id(&tree));
         let new_comp = EntryTree::new(tree, initial);
-        // Remount the tree component with the updated data
+        // Remount the tree component with the updated data.
         let _ = self.app.umount(&Id::Tree);
         self.app
             .mount(Id::Tree, Box::new(new_comp), vec![])
@@ -1759,6 +1783,43 @@ mod tests {
             model.detail_entry.is_some(),
             "entry must be loaded after search pick"
         );
+    }
+
+    #[test]
+    fn search_pick_selects_and_reveals_entry_in_tree() {
+        // Bug 1: after picking a search result the tree must highlight the
+        // picked entry (and open its ancestor folders), not just load detail.
+        let mut store = FakeStore::new();
+        store.seed("infra/a", "pw_a\n");
+        store.seed("infra/b", "pw_b\n");
+        store.seed("web/c", "pw_c\n");
+        let mut model = test_model_with_entries(store);
+
+        // Mount the tree as the real app would (selecting the first leaf).
+        model.mount_phase2();
+        // Sanity: first leaf is selected, not "infra/b".
+        assert_ne!(model.selected_path.as_deref(), Some("infra/b"));
+
+        model.overlay = Overlay::Search;
+        model.update(Some(Msg::SearchPick("infra/b".to_string())));
+
+        // selected_path + detail must point at the picked entry.
+        assert_eq!(
+            model.selected_path.as_deref(),
+            Some("infra/b"),
+            "selected path must be the picked entry"
+        );
+        assert!(
+            model.detail_entry.is_some(),
+            "detail must be loaded for the picked entry"
+        );
+
+        // The treeview exposes its highlighted node via state(): assert the
+        // remount selected "infra/b" (initial_node also opens its ancestors).
+        use tuirealm::state::{State, StateValue};
+        if let Ok(State::Single(StateValue::String(id))) = model.app.state(&Id::Tree) {
+            assert_eq!(id, "infra/b", "treeview must highlight the picked entry");
+        }
     }
 
     // ── Phase-3: create ───────────────────────────────────────────────────────
