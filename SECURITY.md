@@ -6,7 +6,7 @@ Ichtaca is currently in **alpha**. Only the latest published version receives se
 
 | Version | Supported |
 |---------|-----------|
-| `26.6.0-alpha` (latest) | Yes |
+| `26.6.0-alpha.1` (latest) | Yes |
 | Older pre-release builds | No |
 
 > **Alpha software disclaimer:** Ichtaca is pre-release software. It has not undergone a formal security audit. Use it at your own risk, and always maintain a backup of your `~/.password-store` and GPG keys.

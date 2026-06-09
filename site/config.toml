@@ -18,7 +18,7 @@ generate_feeds = false
 taxonomies = []
 
 [extra]
-version = "26.6.0-alpha"
+version = "26.6.0-alpha.1"
 repo_url = "https://github.com/chrnx-dev/ichtaca"
 releases_url = "https://github.com/chrnx-dev/ichtaca/releases/latest"
 security_url = "https://github.com/chrnx-dev/ichtaca/blob/main/SECURITY.md"

@@ -4,6 +4,29 @@ All notable changes to **Ichtaca** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses CalVer
 (`YY.MM.PATCH`).
 
+## [26.6.0-alpha.1] - 2026-06-09
+
+### Added
+
+- **Configurable password generator** — `[generator]` section in
+  `~/.config/pass-client/config.toml` (`length`, `symbols`). The generator now
+  lives in `passcore` (shared CSPRNG); the desktop app generates in the Rust
+  backend instead of the webview.
+- **Content / metadata search** — search inside entries (fields, notes, tags),
+  not just paths. TUI: `Ctrl-f` in the search modal. Desktop: a "search inside
+  entries" toggle. It decrypts (GPG), so it's an explicit, on-demand mode.
+- **Project logo and app icons** — an obsidian-mirror-and-keyhole mark across the
+  desktop app icon (incl. `.icns`/`.ico`), the website, and the README.
+
+### Fixed
+
+- Desktop **copy** now copies only the password (first line), not the whole entry.
+- **Empty entry paths are rejected** (`insert`/`generate`) and stray empty-stem
+  `.gpg` files are skipped — prevents a corrupt entry that broke `pass ls`.
+- TUI: picking a **search result now selects and reveals** that entry in the tree.
+- Desktop: selecting an entry inside a **collapsed folder auto-reveals** it.
+- Desktop: tree hover no longer shows a highlight box (text-colour change only).
+
 ## [26.6.0-alpha] - 2026-06-07
 
 First public alpha. Expect rough edges.

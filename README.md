@@ -217,7 +217,7 @@ crates/
 
 ## Status
 
-**Alpha** — `26.6.0-alpha` (CalVer YY.MM.PATCH). The core features work, but expect rough edges, missing documentation, and breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
+**Alpha** — `26.6.0-alpha.1` (CalVer YY.MM.PATCH). The core features work, but expect rough edges, missing documentation, and breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
 
 ---
 
