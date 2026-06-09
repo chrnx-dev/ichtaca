@@ -33,6 +33,7 @@ pub fn run() {
             commands::read::reveal_otp_uri,
             commands::read::otp_code,
             commands::read::search_fuzzy,
+            commands::read::search_deep,
             commands::write::insert,
             commands::write::update_entry,
             commands::write::remove,
