@@ -79,6 +79,15 @@ pub fn search_fuzzy_impl(state: &AppState, query: String) -> CommandResult<Vec<S
     Ok(hits.into_iter().map(|h| h.path).collect())
 }
 
+/// Content (deep) search: decrypts every entry and returns the paths whose
+/// path, body (fields/notes), or tags contain `query` (case-insensitive).
+/// Slower than `search_fuzzy` (GPG per entry) — user-initiated only. Only entry
+/// PATHS are returned; the matched plaintext is never exposed.
+pub fn search_deep_impl(state: &AppState, query: String) -> CommandResult<Vec<String>> {
+    let store = state.store();
+    passcore::search::deep(&query, store.as_ref()).map_err(CommandError::from)
+}
+
 // ── Tauri command wrappers ────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -109,6 +118,11 @@ pub fn reveal_otp_uri(state: State<'_, AppState>, path: String) -> CommandResult
 #[tauri::command]
 pub fn search_fuzzy(state: State<'_, AppState>, query: String) -> CommandResult<Vec<String>> {
     search_fuzzy_impl(&state, query)
+}
+
+#[tauri::command]
+pub fn search_deep(state: State<'_, AppState>, query: String) -> CommandResult<Vec<String>> {
+    search_deep_impl(&state, query)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -221,6 +235,38 @@ mod tests {
             hits.contains(&"web/github.com".to_string()),
             "search 'git' should find web/github.com; got: {:?}",
             hits
+        );
+    }
+
+    #[test]
+    fn search_deep_finds_body_only_match() {
+        // "bob" appears only in the entry BODY (user: bob), never in any path.
+        let state = state_with_github();
+
+        // Fast fuzzy path search must NOT find a body-only term.
+        let fuzzy = search_fuzzy_impl(&state, "bob".to_string()).unwrap();
+        assert!(
+            !fuzzy.contains(&"web/github.com".to_string()),
+            "fuzzy path search must not match a body-only term; got: {fuzzy:?}"
+        );
+
+        // Content (deep) search decrypts and finds the body match.
+        let deep = search_deep_impl(&state, "bob".to_string()).unwrap();
+        assert_eq!(
+            deep,
+            vec!["web/github.com".to_string()],
+            "deep search must find the body-only match"
+        );
+    }
+
+    #[test]
+    fn search_deep_matches_tag() {
+        // "@work" tag is present but not in the path.
+        let state = state_with_github();
+        let deep = search_deep_impl(&state, "work".to_string()).unwrap();
+        assert!(
+            deep.contains(&"web/github.com".to_string()),
+            "deep search must match the @work tag; got: {deep:?}"
         );
     }
 

@@ -141,6 +141,10 @@ pub struct Model {
     pub search_results: Vec<String>,
     /// Current search query.
     pub search_query: String,
+    /// Whether the last results came from a content (deep) search. Set by
+    /// `Msg::SearchContents`; cleared whenever the query changes (live fast
+    /// path-fuzzy search). Drives the modal title/hint indicator.
+    pub search_content_mode: bool,
 
     // ── Phase 4: raw-edit suspension ─────────────────────────────────────────
     /// When set, the main loop suspends the TUI, calls `store.edit` on this
@@ -216,7 +220,13 @@ impl Model {
     /// layout.
     pub fn view<T: TerminalAdapter>(&mut self, terminal: &mut T) {
         let _ = terminal.draw(|f: &mut Frame| {
-            Self::render_frame(&mut self.app, f, &self.overlay, &self.form);
+            Self::render_frame(
+                &mut self.app,
+                f,
+                &self.overlay,
+                &self.form,
+                self.search_content_mode,
+            );
         });
     }
 
@@ -225,6 +235,7 @@ impl Model {
         f: &mut Frame,
         overlay: &Overlay,
         form: &FormState,
+        search_content_mode: bool,
     ) {
         let area = f.area();
 
@@ -304,8 +315,13 @@ impl Model {
                     .title(tuirealm::ratatui::text::Line::from(
                         tuirealm::ratatui::text::Span::styled(
                             format!(
-                                " {}  Search  [↑↓ navigate · Enter pick · Esc close] ",
-                                theme::icons::SEARCH
+                                " {}  Search{}  [↑↓ navigate · Enter pick · Ctrl-f contents · Esc close] ",
+                                theme::icons::SEARCH,
+                                if search_content_mode {
+                                    " · contents"
+                                } else {
+                                    ""
+                                }
                             ),
                             tuirealm::ratatui::style::Style::default()
                                 .fg(theme::GOLD)
@@ -582,6 +598,8 @@ impl Model {
 
             Some(Msg::SearchChanged(q)) => {
                 self.search_query = q.clone();
+                // Typing reverts to the fast, live path-fuzzy search.
+                self.search_content_mode = false;
                 let paths = self.store.list().unwrap_or_default();
                 let hits = passcore::fuzzy_paths(&q, &paths);
                 let result_paths: Vec<String> = hits.into_iter().map(|h| h.path).collect();
@@ -598,6 +616,36 @@ impl Model {
                     let _ = self
                         .app
                         .remount(Id::SearchResults, Box::new(results), vec![]);
+                }
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::SearchContents) => {
+                // Explicit, on-demand content search: decrypt every entry and
+                // match path/body/tags against the current query. Slower than
+                // the live fuzzy path search, so it is user-initiated (Ctrl-f).
+                let query = self.search_query.clone();
+                match passcore::search::deep(&query, self.store.as_ref()) {
+                    Ok(result_paths) => {
+                        self.search_results = result_paths.clone();
+                        self.search_content_mode = true;
+                        self.notice = None;
+                        // Remount SearchResults so its internal `paths` vec (used
+                        // by `selected_path()`) stays in sync with the displayed
+                        // content-search results — same pattern as SearchChanged.
+                        if self.app.mounted(&Id::SearchResults) {
+                            let mut results = SearchResults::default();
+                            results.set_paths(result_paths);
+                            let _ = self
+                                .app
+                                .remount(Id::SearchResults, Box::new(results), vec![]);
+                        }
+                    }
+                    Err(e) => {
+                        // Never crash on a decrypt error; surface a notice only.
+                        self.notice = Some(format!("content search failed: {e}"));
+                    }
                 }
                 self.redraw = true;
                 None
@@ -923,6 +971,7 @@ impl Model {
         let result_paths: Vec<String> = hits.into_iter().map(|h| h.path).collect();
         self.search_results = result_paths.clone();
         self.search_query = String::new();
+        self.search_content_mode = false;
         self.overlay = Overlay::Search;
 
         // Mount components if not already mounted
@@ -1520,6 +1569,7 @@ mod tests {
             form: FormState::default(),
             search_results: Vec::new(),
             search_query: String::new(),
+            search_content_mode: false,
             pending_raw_edit: None,
             entry_paths: HashSet::new(),
         }
@@ -2284,6 +2334,108 @@ mod tests {
         );
     }
 
+    // ── Content (deep) search mode (Ctrl-f) ───────────────────────────────────
+
+    /// `Msg::SearchContents` runs a deep search that matches entry BODY content
+    /// the fast path-fuzzy search can never see (the query is absent from every
+    /// path). It must find the entry and flag content mode.
+    #[test]
+    fn search_contents_finds_body_only_match() {
+        let mut store = FakeStore::new();
+        // "octocat" appears only in the body of web/github.com, never in a path.
+        store.seed("web/github.com", "pw\nuser: octocat\n");
+        store.seed("email/work", "pw\nuser: bob\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+
+        model.update(Some(Msg::OpenSearch));
+
+        // The fast live path-fuzzy search must NOT find a body-only term.
+        model.update(Some(Msg::SearchChanged("octocat".to_string())));
+        assert!(
+            model.search_results.is_empty(),
+            "fast path-fuzzy must not match a body-only term; got: {:?}",
+            model.search_results
+        );
+        assert!(
+            !model.search_content_mode,
+            "fast search is not content mode"
+        );
+
+        // Ctrl-f runs the content search with the current query and finds it.
+        model.update(Some(Msg::SearchContents));
+        assert_eq!(
+            model.search_results,
+            vec!["web/github.com".to_string()],
+            "content search must find the body-only match"
+        );
+        assert!(
+            model.search_content_mode,
+            "content mode flag must be set after SearchContents"
+        );
+    }
+
+    /// Content search must match TAGS that never appear in any path, and a
+    /// subsequent keystroke reverts to the fast path-fuzzy mode.
+    #[test]
+    fn search_contents_matches_tag_then_typing_reverts_to_fast() {
+        let mut store = FakeStore::new();
+        // "banking" is a tag only — not in any path.
+        store.seed("web/acme", "pw\nuser: alice\n@banking\n");
+        store.seed("web/other", "pw\nuser: bob\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+
+        model.update(Some(Msg::OpenSearch));
+        model.update(Some(Msg::SearchChanged("banking".to_string())));
+        assert!(
+            model.search_results.is_empty(),
+            "fast path-fuzzy must not match a tag-only term"
+        );
+
+        model.update(Some(Msg::SearchContents));
+        assert_eq!(
+            model.search_results,
+            vec!["web/acme".to_string()],
+            "content search must match the tag-only term"
+        );
+        assert!(model.search_content_mode);
+
+        // Typing again reverts to fast path mode and recomputes path-fuzzy.
+        model.update(Some(Msg::SearchChanged("other".to_string())));
+        assert!(
+            !model.search_content_mode,
+            "typing must revert to fast path mode"
+        );
+        assert_eq!(
+            model.search_results,
+            vec!["web/other".to_string()],
+            "fast path-fuzzy must match the path after reverting"
+        );
+    }
+
+    /// Selecting a content-search result must load the correct entry — the
+    /// result→path mapping (remounted SearchResults) stays correct.
+    #[test]
+    fn search_contents_pick_loads_correct_entry() {
+        let mut store = FakeStore::new();
+        store.seed("web/github.com", "pw\nuser: octocat\n");
+        let mut model = test_model(store);
+        model.mount_phase1();
+        model.mount_phase2();
+
+        model.update(Some(Msg::OpenSearch));
+        model.update(Some(Msg::SearchChanged("octocat".to_string())));
+        model.update(Some(Msg::SearchContents));
+
+        let path = model.search_results[0].clone();
+        model.update(Some(Msg::SearchPick(path.clone())));
+        assert_eq!(model.selected_path.as_deref(), Some(path.as_str()));
+        assert!(model.detail_entry.is_some());
+    }
+
     // ── Fix 3: edit save always targets the original entry path ───────────────
 
     /// Opening an edit form then saving with a modified path field in `form`
@@ -2366,6 +2518,7 @@ mod tests {
             form: FormState::default(),
             search_results: Vec::new(),
             search_query: String::new(),
+            search_content_mode: false,
             pending_raw_edit: None,
             entry_paths: paths,
         }

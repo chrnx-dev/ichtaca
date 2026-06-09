@@ -50,7 +50,7 @@ Supported platforms: **macOS** and **Linux**.
 - **TOTP / OTP codes** — generate and copy one-time passwords from `otpauth://` URIs stored in entries
 - **Create / edit / delete entries** — form-based with user-defined templates; or raw `$EDITOR` edit
 - **Password generator** — CSPRNG-backed; configurable length and character set
-- **Fuzzy search** — live search across all entry paths and metadata
+- **Fuzzy search** — live search across all entry paths, plus an on-demand content search (`Ctrl-f`) that decrypts entries to match inside bodies and tags
 - **`git` passthrough** — if your store is a git repo, `pass` manages commits as usual
 
 ---
@@ -137,6 +137,7 @@ cargo run -p pass-tauri
 | `→` / `l` | Expand directory |
 | `Enter` | Select entry |
 | `/` | Open fuzzy search |
+| `Ctrl-f` | In search: content search — decrypts entries to match body/tags (slower) |
 | `c` | Copy password to clipboard |
 | `s` | Toggle password reveal |
 | `a` | Add new entry |

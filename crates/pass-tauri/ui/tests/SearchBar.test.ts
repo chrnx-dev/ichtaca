@@ -5,6 +5,7 @@ import SearchBar from '../src/components/SearchBar.svelte';
 // Mock api
 vi.mock('../src/lib/api', () => ({
   searchFuzzy: vi.fn(),
+  searchDeep: vi.fn(),
   list: vi.fn(),
   buildTree: vi.fn(),
   showMeta: vi.fn(),
@@ -20,9 +21,10 @@ vi.mock('../src/lib/api', () => ({
   otpCode: vi.fn(),
 }));
 
-import { searchFuzzy } from '../src/lib/api';
+import { searchFuzzy, searchDeep } from '../src/lib/api';
 
 const mockSearchFuzzy = vi.mocked(searchFuzzy);
+const mockSearchDeep = vi.mocked(searchDeep);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -140,5 +142,75 @@ describe('SearchBar', () => {
     vi.advanceTimersByTime(300);
 
     expect(mockSearchFuzzy).not.toHaveBeenCalled();
+  });
+
+  it('routes to searchDeep (not searchFuzzy) on Enter when content toggle is on', async () => {
+    mockSearchDeep.mockResolvedValueOnce(['web/github.com']);
+
+    const { getByTestId, getAllByTestId } = render(SearchBar, {
+      props: { onselect: vi.fn(), onclear: vi.fn() },
+    });
+
+    // Enable content search.
+    const toggle = getByTestId('content-search-toggle');
+    await fireEvent.click(toggle);
+
+    const input = getByTestId('search-input');
+    await fireEvent.input(input, { target: { value: 'octocat' } });
+
+    // Content search is deferred to Enter — typing alone must not search.
+    vi.advanceTimersByTime(300);
+    expect(mockSearchFuzzy).not.toHaveBeenCalled();
+    expect(mockSearchDeep).not.toHaveBeenCalled();
+
+    // Enter triggers the deep search.
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mockSearchDeep).toHaveBeenCalledWith('octocat');
+    });
+    expect(mockSearchFuzzy).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      const res = getAllByTestId('search-result');
+      expect(res).toHaveLength(1);
+      expect(res[0].textContent?.trim()).toBe('web/github.com');
+    });
+  });
+
+  it('re-runs the current query via searchDeep when the toggle is switched on', async () => {
+    mockSearchDeep.mockResolvedValueOnce(['web/acme']);
+
+    const { getByTestId } = render(SearchBar, {
+      props: { onselect: vi.fn(), onclear: vi.fn() },
+    });
+
+    const input = getByTestId('search-input');
+    await fireEvent.input(input, { target: { value: 'banking' } });
+
+    // Flip the toggle on — it should re-run the existing query as a deep search.
+    const toggle = getByTestId('content-search-toggle');
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mockSearchDeep).toHaveBeenCalledWith('banking');
+    });
+  });
+
+  it('uses fast searchFuzzy (not searchDeep) while the toggle is off', async () => {
+    mockSearchFuzzy.mockResolvedValueOnce(['web/github.com']);
+
+    const { getByTestId } = render(SearchBar, {
+      props: { onselect: vi.fn(), onclear: vi.fn() },
+    });
+
+    const input = getByTestId('search-input');
+    await fireEvent.input(input, { target: { value: 'git' } });
+    vi.advanceTimersByTime(300);
+
+    await waitFor(() => {
+      expect(mockSearchFuzzy).toHaveBeenCalledWith('git');
+    });
+    expect(mockSearchDeep).not.toHaveBeenCalled();
   });
 });

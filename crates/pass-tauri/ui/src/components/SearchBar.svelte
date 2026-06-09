@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { searchFuzzy } from '../lib/api';
+  import { searchFuzzy, searchDeep } from '../lib/api';
 
   interface Props {
     onselect: (path: string) => void;
@@ -11,6 +11,10 @@
   let query = $state('');
   let results = $state<string[]>([]);
   let isSearching = $state(false);
+  // When true, search decrypts entries and matches body/tags (slower). Because
+  // it is heavier (GPG per entry), content search runs on Enter, not on every
+  // keystroke. The fast path-fuzzy search stays live + debounced.
+  let contentSearch = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearDebounce() {
@@ -20,7 +24,7 @@
     }
   }
 
-  async function runSearch(q: string) {
+  async function runSearch(q: string, deep: boolean) {
     if (!q.trim()) {
       results = [];
       onclear();
@@ -28,7 +32,7 @@
     }
     isSearching = true;
     try {
-      results = await searchFuzzy(q.trim());
+      results = deep ? await searchDeep(q.trim()) : await searchFuzzy(q.trim());
     } catch {
       results = [];
     } finally {
@@ -43,9 +47,28 @@
       onclear();
       return;
     }
+    // Content search is heavier: defer it to Enter. Fast path-fuzzy stays live.
+    if (contentSearch) {
+      return;
+    }
     debounceTimer = setTimeout(() => {
-      runSearch(query);
+      runSearch(query, false);
     }, 250);
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      clearDebounce();
+      runSearch(query, contentSearch);
+    }
+  }
+
+  function handleToggleContent() {
+    // Re-run the current query under the newly selected mode.
+    clearDebounce();
+    if (query.trim()) {
+      runSearch(query, contentSearch);
+    }
   }
 
   function handleSelect(path: string) {
@@ -75,6 +98,7 @@
       placeholder="Search entries…"
       bind:value={query}
       oninput={handleInput}
+      onkeydown={handleKeydown}
       aria-label="Search entries"
       aria-controls="search-results"
       data-testid="search-input"
@@ -89,6 +113,22 @@
       >✕</button>
     {/if}
   </div>
+
+  <!-- Content-search toggle -->
+  <label
+    class="flex items-center gap-1.5 mt-1 text-[11px] text-neutral cursor-pointer select-none"
+    title="Decrypts every entry to match inside passwords, fields and tags. Slower; runs on Enter."
+  >
+    <input
+      type="checkbox"
+      class="checkbox checkbox-xs"
+      bind:checked={contentSearch}
+      onchange={handleToggleContent}
+      aria-label="Search inside entries"
+      data-testid="content-search-toggle"
+    />
+    <span>Search inside entries <span class="opacity-60">(slower; decrypts · Enter)</span></span>
+  </label>
 
   <!-- Results dropdown -->
   {#if results.length > 0}

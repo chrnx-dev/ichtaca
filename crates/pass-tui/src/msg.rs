@@ -40,6 +40,10 @@ pub enum Msg {
     SelectTemplate(usize),
     /// Search query changed.
     SearchChanged(String),
+    /// Run a content (deep) search with the current query — decrypts entries
+    /// and matches path/body/tags. Triggered explicitly (Ctrl-f) because it is
+    /// slower than the live path-fuzzy search.
+    SearchContents,
     /// User picked a search result.
     SearchPick(String),
     /// Open the create-entry form.

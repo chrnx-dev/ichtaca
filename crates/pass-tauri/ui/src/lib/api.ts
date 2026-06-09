@@ -48,6 +48,15 @@ export function searchFuzzy(query: string): Promise<string[]> {
 }
 
 /**
+ * Content (deep) search: returns paths whose path, body, or tags contain
+ * `query`. Decrypts every entry (GPG), so it is slower than `searchFuzzy` and
+ * should be user-initiated. Only entry paths are returned — never plaintext.
+ */
+export function searchDeep(query: string): Promise<string[]> {
+  return invoke('search_deep', { query });
+}
+
+/**
  * Inserts a new password entry at `path`.
  * Set `overwrite` to true to overwrite an existing entry (not exposed in the UI by default).
  */
