@@ -13,4 +13,3 @@ passcore = { path = "../passcore" }
 tuirealm = "4.1"
 tui-realm-stdlib = "4.1"
 tui-realm-treeview = "4.1"
-rand = "0.9"

@@ -161,6 +161,14 @@ pub fn generate_impl(
         .map_err(CommandError::from)
 }
 
+/// Generate a fresh random password using the configured length/charset and
+/// return it to the form. This is a *new* value the user is about to enter and
+/// save — not an existing stored secret — so returning it over IPC is fine.
+pub fn generate_password_impl(state: &AppState) -> CommandResult<String> {
+    let cfg = &state.config.generator;
+    Ok(passcore::generate_password(cfg.length, cfg.symbols))
+}
+
 // ── Tauri command wrappers ────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -205,6 +213,11 @@ pub fn generate(
     symbols: bool,
 ) -> CommandResult<()> {
     generate_impl(&state, path, len, symbols)
+}
+
+#[tauri::command]
+pub fn generate_password(state: State<'_, AppState>) -> CommandResult<String> {
+    generate_password_impl(&state)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -629,5 +642,31 @@ mod tests {
             store.show("new/sym").unwrap().password().chars().count(),
             16
         );
+    }
+
+    // ── generate_password (returns a value, driven by config) ─────────────────
+
+    #[test]
+    fn generate_password_uses_config_length_and_charset() {
+        // Custom config: length 32, no symbols → must yield a 32-char
+        // alphanumeric-only password.
+        let mut config = Config::default();
+        config.generator.length = 32;
+        config.generator.symbols = false;
+        let state = AppState::new(Box::new(FakeStore::new()), config);
+
+        let pw = generate_password_impl(&state).unwrap();
+        assert_eq!(pw.chars().count(), 32, "must honour configured length");
+        assert!(
+            pw.chars().all(|c| c.is_ascii_alphanumeric()),
+            "symbols=false must yield alphanumeric-only password; got {pw:?}"
+        );
+    }
+
+    #[test]
+    fn generate_password_default_config_length_20() {
+        let state = make_state();
+        let pw = generate_password_impl(&state).unwrap();
+        assert_eq!(pw.chars().count(), 20, "default length is 20");
     }
 }

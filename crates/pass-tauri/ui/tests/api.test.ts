@@ -14,6 +14,7 @@ import {
   mv,
   cp,
   generate,
+  generatePassword,
   revealOtpUri,
 } from '../src/lib/api';
 
@@ -146,6 +147,15 @@ describe('generate()', () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     await generate('web/test.com', 20, true);
     expect(mockInvoke).toHaveBeenCalledWith('generate', { path: 'web/test.com', len: 20, symbols: true });
+  });
+});
+
+describe('generatePassword()', () => {
+  it('calls invoke("generate_password") with no args and returns the password', async () => {
+    mockInvoke.mockResolvedValueOnce('Abc123!@#');
+    const result = await generatePassword();
+    expect(mockInvoke).toHaveBeenCalledWith('generate_password');
+    expect(result).toBe('Abc123!@#');
   });
 });
 
