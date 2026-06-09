@@ -1,6 +1,10 @@
-# Ichtaca
+<p align="center">
+  <img src="site/static/logo-400.png" alt="Ichtaca logo" width="160" height="160">
+</p>
 
-> **lo oculto** — a `pass` client for the terminal and desktop
+<h1 align="center">Ichtaca</h1>
+
+<p align="center"><strong>lo oculto</strong> — a <code>pass</code> client for the terminal and desktop</p>
 
 **Ichtaca** (Classical Nahuatl: *"the hidden / the secret"*; pronounced *ich-TA-ka*) is a front-end for [`pass`](https://www.passwordstore.org/), the standard Unix password manager. It does **not** replace `pass` — it wraps the `pass` CLI and `gpg`/`gpg-agent`, giving you a richer interface over your existing `~/.password-store`.
 

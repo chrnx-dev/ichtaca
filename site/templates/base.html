@@ -7,7 +7,8 @@
   <meta name="description" content="{% block description %}{{ config.description }}{% endblock description %}">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#15131A">
-  <link rel="icon" type="image/svg+xml" href="{{ get_url(path='favicon.svg') }}">
+  <link rel="icon" type="image/png" href="{{ get_url(path='favicon-64.png') }}">
+  <link rel="apple-touch-icon" href="{{ get_url(path='apple-touch-icon.png') }}">
   <link rel="stylesheet" href="{{ get_url(path='style.css') }}">
 
   <!-- Open Graph -->
@@ -22,11 +23,7 @@
   <header class="site-header">
     <nav class="nav" aria-label="Primary">
       <a class="brand" href="{{ get_url(path='@/_index.md') }}">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" role="img">
-            <use href="#icon-key"></use>
-          </svg>
-        </span>
+        <img class="brand-mark" src="{{ get_url(path='logo.png') }}" alt="" width="28" height="28">
         <span class="brand-name">Ichtaca</span>
       </a>
       <ul class="nav-links">

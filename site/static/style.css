@@ -105,7 +105,8 @@ code {
   letter-spacing: 0.04em;
 }
 .brand:hover { text-decoration: none; }
-.brand-mark { color: var(--gold); display: inline-flex; }
+.brand-mark { display: inline-block; width: 28px; height: 28px; border-radius: 7px; vertical-align: middle; }
+.hero-logo { display: block; width: 128px; height: 128px; margin: 0 auto 1.25rem; border-radius: 26px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
 .brand-name { font-size: 1.05rem; }
 .nav-links {
   display: flex;
