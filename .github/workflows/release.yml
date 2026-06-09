@@ -30,15 +30,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest # Apple Silicon
-            target: aarch64-apple-darwin
-            label: macos-arm64
-          - os: macos-13 # Intel
-            target: x86_64-apple-darwin
-            label: macos-x86_64
+          # One universal macOS bundle (arm64 + Intel) built on the arm runner —
+          # avoids the flaky/retiring Intel (`macos-13`) runners entirely.
+          - os: macos-latest
+            label: macos-universal
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri_target: universal-apple-darwin
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
             label: linux-x86_64
+            rust_targets: x86_64-unknown-linux-gnu
+            tauri_target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -58,7 +59,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -67,16 +68,23 @@ jobs:
           cache-dependency-path: crates/pass-tauri/ui/package-lock.json
 
       # ── TUI binary (`ichtaca`) ────────────────────────────────────────────
-      - name: Build TUI (ichtaca)
-        run: cargo build --release -p pass-tui --target ${{ matrix.target }}
-
-      - name: Package TUI tarball
+      # On macOS, build both arches and `lipo` them into a universal binary.
+      - name: Build & package TUI (ichtaca)
         shell: bash
         run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cargo build --release -p pass-tui --target aarch64-apple-darwin
+            cargo build --release -p pass-tui --target x86_64-apple-darwin
+            lipo -create -output ichtaca \
+              target/aarch64-apple-darwin/release/ichtaca \
+              target/x86_64-apple-darwin/release/ichtaca
+          else
+            cargo build --release -p pass-tui --target ${{ matrix.tauri_target }}
+            cp "target/${{ matrix.tauri_target }}/release/ichtaca" ichtaca
+          fi
           dist="ichtaca-${{ github.ref_name }}-${{ matrix.label }}"
           mkdir -p "$dist"
-          cp "target/${{ matrix.target }}/release/ichtaca" "$dist/"
-          cp README.md LICENSE CHANGELOG.md "$dist/"
+          cp ichtaca README.md LICENSE CHANGELOG.md "$dist/"
           tar -czf "${dist}.tar.gz" "$dist"
           echo "TUI_TARBALL=${dist}.tar.gz" >> "$GITHUB_ENV"
 
@@ -111,7 +119,7 @@ jobs:
           releaseName: 'Ichtaca ${{ github.ref_name }}'
           releaseDraft: true
           prerelease: true
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.tauri_target }}
 
       # ── Attach the TUI tarball to the same release ────────────────────────
       - name: Upload TUI tarball to the release
