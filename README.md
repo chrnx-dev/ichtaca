@@ -180,7 +180,22 @@ quit   = "q"
 
 [ui]
 reveal_default = false
+
+[generator]
+length  = 20      # number of characters in a generated password
+symbols = true    # include punctuation (!@#$…); set false for alphanumeric-only
 ```
+
+### Password generator
+
+The built-in generator is a CSPRNG (OS-backed, rejection-sampled so there is no
+modulo bias) shared by both frontends. Both the length and the character set are
+configurable via the `[generator]` section above (read from
+`~/.config/pass-client/config.toml`):
+
+- `length` — password length in characters (default `20`).
+- `symbols` — when `true` (default) the charset is alphanumeric plus
+  `!@#$%^&*()-_=+`; when `false` it is alphanumeric only.
 
 ---
 
