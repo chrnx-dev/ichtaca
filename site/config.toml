@@ -1,0 +1,25 @@
+# Zola configuration for the Ichtaca landing page.
+# Project page served under a subpath: https://chrnx-dev.github.io/ichtaca/
+base_url = "https://chrnx-dev.github.io/ichtaca"
+title = "Ichtaca"
+description = "lo oculto — a pass client for the terminal and desktop."
+
+# Plain CSS lives in static/; no Sass compilation needed.
+compile_sass = false
+
+# Minify the generated HTML.
+minify_html = true
+
+# Don't build a search index or generate feeds for a single-page landing.
+build_search_index = false
+generate_feeds = false
+
+# Keep taxonomies empty.
+taxonomies = []
+
+[extra]
+version = "26.6.0-alpha"
+repo_url = "https://github.com/chrnx-dev/ichtaca"
+releases_url = "https://github.com/chrnx-dev/ichtaca/releases/latest"
+security_url = "https://github.com/chrnx-dev/ichtaca/blob/main/SECURITY.md"
+nahuatl_meaning = "Classical Nahuatl: \"the hidden / the secret\" · pron. ich-TA-ka"

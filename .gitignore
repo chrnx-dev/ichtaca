@@ -12,3 +12,6 @@ crates/pass-tauri/ui/dist/
 
 # tsbuild output from composite tsconfig
 crates/pass-tauri/ui/.tsbuild-node/
+
+# Zola build output for the landing page (reproduce with: zola --root site build)
+site/public/

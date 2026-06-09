@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Ichtaca · lo oculto — a pass client for the terminal and desktop{% endblock title %}
+
+{% block content %}
+
+<!-- HERO -->
+<section class="hero" aria-labelledby="hero-title">
+  <div class="container hero-inner">
+    <p class="hero-eyebrow">a <code>pass</code> client · terminal &amp; desktop</p>
+    <h1 id="hero-title" class="hero-title">
+      <span class="hero-word">ICHTACA</span>
+      <span class="hero-sep">·</span>
+      <span class="hero-tagline">lo oculto</span>
+    </h1>
+    <p class="hero-pitch">A <code>pass</code> client for the terminal and desktop — a richer interface over your existing <code>~/.password-store</code>.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#downloads">Download</a>
+      <a class="btn btn-ghost" href="{{ config.extra.repo_url }}" rel="noopener">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M12 1.5a10.5 10.5 0 0 0-3.32 20.46c.52.1.71-.23.71-.5v-1.75c-2.92.63-3.54-1.4-3.54-1.4-.48-1.21-1.16-1.53-1.16-1.53-.95-.65.07-.64.07-.64 1.05.07 1.6 1.08 1.6 1.08.94 1.6 2.46 1.14 3.06.87.1-.68.37-1.14.66-1.4-2.33-.27-4.78-1.17-4.78-5.18 0-1.15.41-2.08 1.08-2.82-.11-.27-.47-1.34.1-2.8 0 0 .88-.28 2.88 1.07a9.9 9.9 0 0 1 5.24 0c2-1.35 2.88-1.07 2.88-1.07.57 1.46.21 2.53.1 2.8.68.74 1.08 1.67 1.08 2.82 0 4.02-2.46 4.9-4.8 5.16.38.33.71.97.71 1.96v2.9c0 .28.19.61.72.5A10.5 10.5 0 0 0 12 1.5Z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <p class="hero-note">macOS &amp; Linux · MIT · <span class="badge">v{{ config.extra.version }}</span></p>
+  </div>
+</section>
+
+<!-- SCREENSHOTS -->
+<section class="section" id="screenshots" aria-labelledby="shots-title">
+  <div class="container">
+    <h2 id="shots-title" class="section-title">See it</h2>
+    <div class="shots-grid">
+      <figure class="shot-card">
+        <img src="{{ get_url(path='screenshots/tui.svg') }}" alt="Placeholder for the Ichtaca terminal TUI screenshot" width="800" height="500" loading="lazy">
+        <figcaption><span class="gold">ichtaca</span> — terminal TUI (tui-realm)</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img src="{{ get_url(path='screenshots/desktop.svg') }}" alt="Placeholder for the Ichtaca desktop GUI screenshot" width="800" height="500" loading="lazy">
+        <figcaption><span class="gold">ichtaca-desktop</span> — desktop GUI (Tauri + Svelte)</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOADS -->
+<section class="section section-alt" id="downloads" aria-labelledby="dl-title">
+  <div class="container">
+    <h2 id="dl-title" class="section-title">Download</h2>
+    <p class="section-lead">Grab the latest build from the <a href="{{ config.extra.releases_url }}" rel="noopener">GitHub Releases</a> page. Two apps share the same <code>passcore</code> Rust core.</p>
+
+    <div class="dl-grid">
+      <article class="dl-card">
+        <h3>Desktop GUI</h3>
+        <p class="dl-sub"><code>ichtaca-desktop</code> · Tauri + Svelte</p>
+        <ul class="dl-assets">
+          <li><strong>macOS</strong> — universal <code>.dmg</code></li>
+          <li><strong>Linux</strong> — <code>.AppImage</code> / <code>.deb</code></li>
+        </ul>
+        <a class="btn btn-primary btn-block" href="{{ config.extra.releases_url }}" rel="noopener">Get the desktop app</a>
+      </article>
+
+      <article class="dl-card">
+        <h3>Terminal TUI</h3>
+        <p class="dl-sub"><code>ichtaca</code> · keyboard-driven</p>
+        <ul class="dl-assets">
+          <li><strong>macOS</strong> — arm64 + Intel tarballs (<code>.tar.gz</code>)</li>
+          <li><strong>Linux</strong> — x86_64 tarball (<code>.tar.gz</code>)</li>
+        </ul>
+        <p class="dl-hint">Requires a <a href="https://www.nerdfonts.com/" rel="noopener">Nerd Font</a> in your terminal.</p>
+        <a class="btn btn-primary btn-block" href="{{ config.extra.releases_url }}" rel="noopener">Get the TUI</a>
+      </article>
+    </div>
+
+    <p class="note note-warn" role="note">
+      <strong>macOS, unsigned alpha:</strong> the <code>.dmg</code>/<code>.app</code> is not yet code-signed or notarized, so Gatekeeper blocks it on first launch.
+      <strong>Right-click</strong> (or Control-click) the app → <strong>Open</strong> → <strong>Open</strong> (only needed once), or run
+      <code>xattr -dr com.apple.quarantine /Applications/Ichtaca.app</code>.
+    </p>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features" aria-labelledby="feat-title">
+  <div class="container">
+    <h2 id="feat-title" class="section-title">Features</h2>
+    <ul class="feature-grid">
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-tree"></use></svg></span>
+        <h3>Tree browser</h3>
+        <p>Navigate your store directory tree with vim keys (<code>hjkl</code>) or arrows.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-eye"></use></svg></span>
+        <h3>Masked &amp; reveal</h3>
+        <p>Passwords are masked by default; reveal only on an explicit action.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-clock"></use></svg></span>
+        <h3>Live OTP / TOTP</h3>
+        <p>Generate and copy one-time codes from <code>otpauth://</code> URIs.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-clipboard"></use></svg></span>
+        <h3>Copy &amp; auto-clear</h3>
+        <p>Clipboard copies clear after 45s — only if the value is still yours.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-search"></use></svg></span>
+        <h3>Fuzzy search</h3>
+        <p>Live search across all entry paths and metadata.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-edit"></use></svg></span>
+        <h3>Create / edit / delete</h3>
+        <p>Form-based with templates and notes — or raw <code>$EDITOR</code> edit.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-dice"></use></svg></span>
+        <h3>CSPRNG generator</h3>
+        <p>Secure password generation with configurable length and charset.</p>
+      </li>
+      <li class="feature">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-terminal"></use></svg></span>
+        <h3>Obsidiana &amp; Oro</h3>
+        <p>A clean, dark, gold-accented theme across both apps.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- REQUIREMENTS / HOW IT WORKS -->
+<section class="section section-alt" id="how" aria-labelledby="how-title">
+  <div class="container how-grid">
+    <div>
+      <h2 id="how-title" class="section-title">How it works</h2>
+      <p class="section-lead">Ichtaca does <strong>not</strong> replace <code>pass</code>. It wraps the <code>pass</code> CLI and <code>gpg</code>/<code>gpg-agent</code>, giving you a richer interface over the same <code>~/.password-store</code> — no migration, no new data format.</p>
+    </div>
+    <div>
+      <h3 class="req-title">Requirements</h3>
+      <ul class="req-list">
+        <li><a href="https://www.passwordstore.org/" rel="noopener"><code>pass</code></a> installed and on <code>$PATH</code></li>
+        <li><code>gpg</code> / <code>gpg-agent</code> with a configured key</li>
+        <li>An initialized store: <code>pass init &lt;gpg-key-id&gt;</code></li>
+        <li><strong>TUI only:</strong> a Nerd Font in your terminal</li>
+        <li>Platforms: macOS &amp; Linux</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- SECURITY -->
+<section class="section" id="security" aria-labelledby="sec-title">
+  <div class="container">
+    <h2 id="sec-title" class="section-title">
+      <span class="sec-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#icon-shield"></use></svg></span>
+      Security
+    </h2>
+    <p class="section-lead">Designed to keep secrets off disk and out of logs.</p>
+    <ul class="sec-list">
+      <li>Decryption is delegated to <code>gpg</code>/<code>gpg-agent</code> via <code>pass</code> — no decrypted data is written to disk.</li>
+      <li>In-memory secrets are zeroized on drop and redacted from debug output.</li>
+      <li>Passwords masked by default; clipboard auto-clears after 45 seconds with an ownership check.</li>
+      <li>Desktop app keeps plaintext in the Rust backend; only explicit reveal commands cross IPC. Strict CSP — no remote scripts or URLs.</li>
+      <li>No telemetry, no network connections (other than <code>git</code> if your store uses it).</li>
+    </ul>
+    <p><a class="btn btn-ghost" href="{{ config.extra.security_url }}" rel="noopener">Read SECURITY.md</a></p>
+  </div>
+</section>
+
+{% endblock content %}
