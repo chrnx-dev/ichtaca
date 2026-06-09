@@ -71,6 +71,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         form: FormState::default(),
         search_results: Vec::new(),
         search_query: String::new(),
+        search_content_mode: false,
         pending_raw_edit: None,
         entry_paths: HashSet::new(),
     };

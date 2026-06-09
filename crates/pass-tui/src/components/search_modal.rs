@@ -88,6 +88,12 @@ impl AppComponent<Msg, NoUserEvent> for SearchInput {
             // Accept plain chars (NONE) AND Shift-chars (SHIFT) so that
             // uppercase letters and symbols (e.g. !@#) work in the search box.
             // Any other modifier combo (CTRL, ALT) falls through to the wildcard.
+            // Ctrl-f — run a content (deep) search with the current query.
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => Some(Msg::SearchContents),
+
             Event::Keyboard(KeyEvent {
                 code: Key::Char(ch),
                 modifiers,
@@ -236,6 +242,12 @@ impl AppComponent<Msg, NoUserEvent> for SearchResults {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Msg::CloseOverlay),
 
+            // Ctrl-f — run a content (deep) search with the current query.
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => Some(Msg::SearchContents),
+
             Event::Keyboard(KeyEvent {
                 code: Key::Down | Key::Char('j'),
                 modifiers: KeyModifiers::NONE,
@@ -355,6 +367,26 @@ mod tests {
             KeyModifiers::NONE,
         )));
         assert_eq!(msg, Some(Msg::SearchPick("web/b".to_string())));
+    }
+
+    #[test]
+    fn search_input_ctrl_f_emits_search_contents() {
+        let mut comp = SearchInput::default();
+        let msg = comp.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('f'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(msg, Some(Msg::SearchContents));
+    }
+
+    #[test]
+    fn search_results_ctrl_f_emits_search_contents() {
+        let mut comp = SearchResults::default();
+        let msg = comp.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('f'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(msg, Some(Msg::SearchContents));
     }
 
     #[test]
