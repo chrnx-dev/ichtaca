@@ -76,6 +76,26 @@ describe('TreePanel', () => {
     expect(btn).toHaveClass('selected');
   });
 
+  it('auto-reveals the selected entry inside a collapsed folder', () => {
+    const infraTree: EntryNode[] = [
+      {
+        name: 'infra',
+        path: null,
+        children: [{ name: 'mac-studio', path: 'infra/mac-studio', children: [] }],
+      },
+    ];
+
+    // No manual expansion: 'infra' starts collapsed, but the selection lives
+    // inside it, so the leaf must be revealed (and highlighted).
+    const { getByText } = render(TreePanel, {
+      props: { tree: infraTree, selectedPath: 'infra/mac-studio', onselect: vi.fn() },
+    });
+
+    const leaf = getByText('mac-studio');
+    expect(leaf).toBeInTheDocument();
+    expect(leaf.closest('button')).toHaveClass('selected');
+  });
+
   it('renders an empty tree without errors', () => {
     const { container } = render(TreePanel, {
       props: { tree: [], selectedPath: null, onselect: vi.fn() },
