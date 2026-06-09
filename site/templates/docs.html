@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title | default(value="Docs") }} · Ichtaca{% endblock title %}
+{% block description %}{{ section.description | default(value="Documentation for Ichtaca.") }}{% endblock description %}
+
+{% block content %}
+<section class="section">
+  <div class="container prose">
+    {% if section %}
+      {{ section.content | safe }}
+    {% elif page %}
+      <h1>{{ page.title }}</h1>
+      {{ page.content | safe }}
+    {% endif %}
+    <p><a class="btn btn-ghost" href="{{ get_url(path='@/_index.md') }}">&larr; Back home</a></p>
+  </div>
+</section>
+{% endblock content %}
