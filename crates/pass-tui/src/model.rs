@@ -761,7 +761,10 @@ impl Model {
 
             // ── Phase 3: Generate ─────────────────────────────────────────────
             Some(Msg::Generate) => {
-                let pw = crate::domain::generate_password(20, true);
+                let pw = passcore::generate_password(
+                    self.config.generator.length,
+                    self.config.generator.symbols,
+                );
                 // Set the password in the form state and update the mounted widget.
                 self.form.password = pw.clone();
                 // Update the mounted password field (index 1)
