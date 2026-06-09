@@ -16,17 +16,19 @@ vi.mock('../src/lib/api', () => ({
   mv: vi.fn(),
   cp: vi.fn(),
   generate: vi.fn(),
+  generatePassword: vi.fn(),
   copyPassword: vi.fn(),
   otpCode: vi.fn(),
 }));
 
-import { insert, updateEntry, showMeta, revealPassword, revealOtpUri } from '../src/lib/api';
+import { insert, updateEntry, showMeta, revealPassword, revealOtpUri, generatePassword } from '../src/lib/api';
 
 const mockInsert = vi.mocked(insert);
 const mockUpdateEntry = vi.mocked(updateEntry);
 const mockShowMeta = vi.mocked(showMeta);
 const mockRevealPassword = vi.mocked(revealPassword);
 const mockRevealOtpUri = vi.mocked(revealOtpUri);
+const mockGeneratePassword = vi.mocked(generatePassword);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -242,7 +244,9 @@ describe('Form (create) — Save', () => {
     });
   });
 
-  it('Generate button fills the password field with a non-empty value', async () => {
+  it('Generate button fills the password field from the backend command', async () => {
+    mockGeneratePassword.mockResolvedValueOnce('Abc123!@#xyzABC123!@#');
+
     const { getByTestId } = render(Form, {
       props: {
         mode: 'create',
@@ -256,8 +260,10 @@ describe('Form (create) — Save', () => {
 
     await fireEvent.click(getByTestId('generate-button'));
 
-    expect(passwordInput.value).toBeTruthy();
-    expect(passwordInput.value.length).toBeGreaterThanOrEqual(20);
+    await waitFor(() => {
+      expect(mockGeneratePassword).toHaveBeenCalledTimes(1);
+      expect(passwordInput.value).toBe('Abc123!@#xyzABC123!@#');
+    });
   });
 });
 
@@ -436,10 +442,12 @@ describe('Form (create) — tag @-prefix normalization', () => {
   });
 });
 
-// ── Password generator — rejection-sampling / charset ────────────────────────
+// ── Password generator — backend command ─────────────────────────────────────
 
-describe('Form (create) — generatePasswordLocally', () => {
-  it('Generate button produces a password of length >= 20 using only charset chars', async () => {
+describe('Form (create) — generatePassword (backend command)', () => {
+  it('Generate button writes the backend-returned password into the field', async () => {
+    mockGeneratePassword.mockResolvedValueOnce('p4ssw0rd-from-backend!');
+
     const { getByTestId } = render(Form, {
       props: {
         mode: 'create',
@@ -451,16 +459,29 @@ describe('Form (create) — generatePasswordLocally', () => {
     await fireEvent.click(getByTestId('generate-button'));
 
     const passwordInput = getByTestId('password-input') as HTMLInputElement;
-    const pw = passwordInput.value;
-    expect(pw.length).toBe(20);
+    await waitFor(() => {
+      expect(passwordInput.value).toBe('p4ssw0rd-from-backend!');
+    });
+  });
 
-    const alpha = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const digits = '0123456789';
-    const sym = '!@#$%^&*()-_=+[]{}|;:,.<>?';
-    const charset = alpha + digits + sym;
-    for (const ch of pw) {
-      expect(charset).toContain(ch);
-    }
+  it('shows an inline error when the backend generate command fails', async () => {
+    mockGeneratePassword.mockRejectedValueOnce(new Error('boom'));
+
+    const { getByTestId } = render(Form, {
+      props: {
+        mode: 'create',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(getByTestId('generate-button'));
+
+    await waitFor(() => {
+      const err = getByTestId('form-error');
+      expect(err).toBeInTheDocument();
+      expect(err.textContent).toMatch(/boom/i);
+    });
   });
 });
 

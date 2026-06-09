@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { showMeta, revealPassword, revealOtpUri, insert, updateEntry } from '../lib/api';
+  import { showMeta, revealPassword, revealOtpUri, insert, updateEntry, generatePassword } from '../lib/api';
   import type { EntryInput } from '../lib/types';
 
   interface Props {
@@ -43,33 +43,14 @@
   let showPassword = $state(false);
   let showOtp = $state(false);
 
-  // ── Local password generator ──────────────────────────────────────────────────
+  // ── Password generator (backend, CSPRNG, config-driven) ───────────────────────
 
-  function generatePasswordLocally(len = 20, symbols = true): string {
-    const alpha = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const digits = '0123456789';
-    const sym = '!@#$%^&*()-_=+[]{}|;:,.<>?';
-    const charset = alpha + digits + (symbols ? sym : '');
-    const limit = Math.floor(256 / charset.length) * charset.length;
-    const result: string[] = [];
-    let buf = new Uint8Array(len * 2);
-    let pos = buf.length;
-    while (result.length < len) {
-      if (pos >= buf.length) {
-        buf = new Uint8Array(len * 2);
-        crypto.getRandomValues(buf);
-        pos = 0;
-      }
-      const b = buf[pos++];
-      if (b < limit) {
-        result.push(charset[b % charset.length]);
-      }
+  async function handleGenerate() {
+    try {
+      password = await generatePassword();
+    } catch (e) {
+      errorMsg = `Failed to generate password: ${e instanceof Error ? e.message : String(e)}`;
     }
-    return result.join('');
-  }
-
-  function handleGenerate() {
-    password = generatePasswordLocally(20, true);
   }
 
   // ── Template picker ───────────────────────────────────────────────────────────

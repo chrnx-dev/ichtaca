@@ -39,6 +39,7 @@ pub fn run() {
             commands::write::mv,
             commands::write::cp,
             commands::write::generate,
+            commands::write::generate_password,
             commands::clipboard::copy_password,
         ])
         .run(tauri::generate_context!())

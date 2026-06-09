@@ -84,6 +84,15 @@ export function generate(path: string, len: number, symbols: boolean): Promise<v
 }
 
 /**
+ * Generates a fresh random password using the backend's configured length and
+ * character set (`[generator]` in config.toml) and returns it for the form.
+ * This is a new value the user is about to enter/save — not a stored secret.
+ */
+export function generatePassword(): Promise<string> {
+  return invoke('generate_password');
+}
+
+/**
  * Reveals the OTP URI for `path`.
  * Returns null if the entry has no OTP configured.
  */
