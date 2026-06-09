@@ -8,7 +8,13 @@
 
 ## Screenshots
 
-> *Screenshots coming soon.*
+**`ichtaca` — terminal UI**
+
+![Ichtaca terminal TUI](site/static/screenshots/tui.png)
+
+**`ichtaca-desktop` — desktop GUI**
+
+![Ichtaca desktop GUI](site/static/screenshots/desktop.png)
 
 ---
 
