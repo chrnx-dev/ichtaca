@@ -17,6 +17,7 @@ pub struct Config {
     pub templates: Vec<TemplateConfig>,
     pub keybindings: KeybindingsConfig,
     pub ui: UiConfig,
+    pub generator: GeneratorConfig,
 }
 
 /// A config-defined entry template (suggested keys for new entries).
@@ -81,6 +82,25 @@ impl Default for KeybindingsConfig {
 pub struct UiConfig {
     /// Whether the password is revealed by default in the detail panel.
     pub reveal_default: bool,
+}
+
+/// Password-generator preferences (length + character set).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct GeneratorConfig {
+    /// Number of characters in a generated password.
+    pub length: usize,
+    /// Whether to include punctuation/symbol characters.
+    pub symbols: bool,
+}
+
+impl Default for GeneratorConfig {
+    fn default() -> Self {
+        Self {
+            length: 20,
+            symbols: true,
+        }
+    }
 }
 
 impl Config {
@@ -166,5 +186,36 @@ mod tests {
     fn ui_defaults_hide_password() {
         let c = Config::default();
         assert!(!c.ui.reveal_default);
+    }
+
+    #[test]
+    fn generator_defaults_length_20_symbols_true() {
+        let c = Config::default();
+        assert_eq!(c.generator.length, 20);
+        assert!(c.generator.symbols);
+    }
+
+    #[test]
+    fn generator_overridable_from_toml() {
+        let toml = r#"
+            [generator]
+            length = 32
+            symbols = false
+        "#;
+        let c = Config::from_toml_str(toml).unwrap();
+        assert_eq!(c.generator.length, 32);
+        assert!(!c.generator.symbols);
+    }
+
+    #[test]
+    fn generator_partial_toml_keeps_other_default() {
+        // Only length given → symbols keeps its default (true).
+        let toml = r#"
+            [generator]
+            length = 64
+        "#;
+        let c = Config::from_toml_str(toml).unwrap();
+        assert_eq!(c.generator.length, 64);
+        assert!(c.generator.symbols);
     }
 }
