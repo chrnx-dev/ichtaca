@@ -390,8 +390,8 @@ impl Model {
                 // Note: Enter saves from single-line fields; Ctrl-s saves from
                 // any field including the Notes textarea (where Enter = newline).
                 let form_title = match mode {
-                    FormMode::Create => " New Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-g generate · Tab path-complete] ",
-                    FormMode::Edit => " Edit Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-g generate] ",
+                    FormMode::Create => " New Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-a add field · Ctrl-g generate · Tab path-complete] ",
+                    FormMode::Edit => " Edit Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-a add field · Ctrl-g generate] ",
                 };
                 let popup_block = tuirealm::ratatui::widgets::Block::default()
                     .style(
