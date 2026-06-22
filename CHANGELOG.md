@@ -4,6 +4,24 @@ All notable changes to **Ichtaca** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses CalVer
 (`YY.MM.PATCH`).
 
+## [26.6.0-alpha.2] - 2026-06-22
+
+### Added
+
+- TUI entry forms can add custom fields with `Ctrl-a`.
+- TUI entry forms can edit custom field labels and values with `Ctrl-e`.
+
+### Changed
+
+- TUI entry serialization keeps custom fields before notes.
+
+### Fixed
+
+- TUI entry forms can remove custom fields with `Ctrl-d` while keeping fixed
+  fields such as password and OTP protected.
+- Desktop edit-form regression coverage now verifies custom fields are
+  preserved.
+
 ## [26.6.0-alpha.1] - 2026-06-09
 
 ### Added
@@ -55,4 +73,6 @@ First public alpha. Expect rough edges.
 - All GPG/pinentry/key handling is delegated to `gpg`/`gpg-agent`.
 - No telemetry and no network access (other than `git` if your store uses it).
 
+[26.6.0-alpha.2]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha.2
+[26.6.0-alpha.1]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha.1
 [26.6.0-alpha]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha

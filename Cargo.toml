@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/passcore", "crates/pass-tui", "crates/pass-tauri"]
 
 [workspace.package]
-version = "26.6.0-alpha.1"
+version = "26.6.0-alpha.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/chrnx-dev/ichtaca"
