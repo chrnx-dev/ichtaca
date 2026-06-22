@@ -357,6 +357,52 @@ describe('Form (edit) — prefill', () => {
 
     expect(onsaved).toHaveBeenCalled();
   });
+
+  it('edit mode can add a custom field before saving', async () => {
+    mockShowMeta.mockResolvedValueOnce({
+      path: 'web/example.com',
+      fields: [['user', 'alice']],
+      tags: [],
+      has_otp: false,
+    });
+    mockRevealPassword.mockResolvedValueOnce('pw');
+    mockRevealOtpUri.mockResolvedValueOnce(null);
+    mockUpdateEntry.mockResolvedValueOnce(undefined);
+
+    const onsaved = vi.fn();
+    const { getByTestId, getAllByTestId } = render(Form, {
+      props: {
+        mode: 'edit',
+        path: 'web/example.com',
+        onsaved,
+        oncancel: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(getAllByTestId('field-row')).toHaveLength(1));
+
+    await fireEvent.click(getByTestId('add-field'));
+    await fireEvent.input(getByTestId('field-key-1'), { target: { value: 'account_id' } });
+    await fireEvent.input(getByTestId('field-value-1'), { target: { value: 'acct_123' } });
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockUpdateEntry).toHaveBeenCalledWith(
+        'web/example.com',
+        expect.objectContaining({
+          password: 'pw',
+          fields: [
+            ['user', 'alice'],
+            ['account_id', 'acct_123'],
+          ],
+          otp: null,
+          tags: [],
+        })
+      );
+    });
+
+    expect(onsaved).toHaveBeenCalled();
+  });
 });
 
 // ── Cancel button ─────────────────────────────────────────────────────────────
