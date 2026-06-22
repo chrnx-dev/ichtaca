@@ -119,11 +119,7 @@ pub struct CustomFieldState {
     pub parent_mode: FormMode,
 }
 
-pub fn upsert_custom_field(
-    form: &mut FormState,
-    key: &str,
-    value: &str,
-) -> Result<(), String> {
+pub fn upsert_custom_field(form: &mut FormState, key: &str, value: &str) -> Result<(), String> {
     let key = key.trim();
     if key.is_empty() {
         return Err("field key cannot be empty".to_string());
@@ -2345,12 +2341,10 @@ mod tests {
         model.update(Some(Msg::SubmitCustomField));
 
         assert_eq!(model.overlay, Overlay::Form(FormMode::Edit));
-        assert!(
-            model
-                .form
-                .fields
-                .contains(&("account_id".to_string(), "acct_123".to_string()))
-        );
+        assert!(model
+            .form
+            .fields
+            .contains(&("account_id".to_string(), "acct_123".to_string())));
         assert_eq!(model.form.notes_focus_idx(), 6);
         assert!(model.app.mounted(&Id::FormNotes));
     }
