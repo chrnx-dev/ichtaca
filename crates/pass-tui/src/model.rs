@@ -16,8 +16,8 @@ use tuirealm::ratatui::Frame;
 use tuirealm::terminal::TerminalAdapter;
 
 use crate::components::{
-    ConfirmModal, Detail, EntryTree, FormField, FormMode, Header, NotesField, SearchInput,
-    SearchResults, StatusBar, TemplateModal,
+    ConfirmModal, CustomFieldInput, Detail, EntryTree, FormField, FormMode, Header, NotesField,
+    SearchInput, SearchResults, StatusBar, TemplateModal,
 };
 use crate::id::Id;
 use crate::msg::Msg;
@@ -761,8 +761,12 @@ impl Model {
             }
 
             Some(Msg::CloseOverlay) => {
-                self.close_overlay();
-                let _ = self.app.active(&Id::Tree);
+                if self.overlay == Overlay::CustomField {
+                    self.return_to_parent_form();
+                } else {
+                    self.close_overlay();
+                    let _ = self.app.active(&Id::Tree);
+                }
                 self.redraw = true;
                 None
             }
@@ -830,10 +834,26 @@ impl Model {
                 None
             }
 
-            Some(Msg::OpenCustomField)
-            | Some(Msg::CustomFieldFocusNext)
-            | Some(Msg::CustomFieldFocusPrev)
-            | Some(Msg::SubmitCustomField) => {
+            Some(Msg::OpenCustomField) => {
+                self.open_custom_field_prompt();
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::CustomFieldFocusNext) => {
+                self.advance_custom_field_focus(1);
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::CustomFieldFocusPrev) => {
+                self.advance_custom_field_focus(-1);
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::SubmitCustomField) => {
+                self.submit_custom_field();
                 self.redraw = true;
                 None
             }
@@ -1121,22 +1141,11 @@ impl Model {
                 let _ = self.app.umount(&Id::FormTemplate);
             }
             Overlay::Form(_) => {
-                // Unmount all mounted form fields.
-                // In Edit mode the path field (index 0) is NOT mounted, so we
-                // start from first_focus_idx().  The notes field (last in chain)
-                // uses Id::FormNotes, not Id::FormField.
-                let first = self.form.first_focus_idx();
-                let notes_idx = self.form.notes_focus_idx();
-                let count = self.form.field_count();
-                for i in first..(first + count) {
-                    if i == notes_idx {
-                        let _ = self.app.umount(&Id::FormNotes);
-                    } else {
-                        let _ = self.app.umount(&Id::FormField(i));
-                    }
-                }
+                self.unmount_form_fields();
             }
-            Overlay::CustomField => {}
+            Overlay::CustomField => {
+                self.unmount_custom_field_inputs();
+            }
             Overlay::Confirm => {
                 let _ = self.app.umount(&Id::ConfirmDialog);
             }
@@ -1144,8 +1153,120 @@ impl Model {
         }
         self.overlay = Overlay::None;
         self.form = FormState::default();
+        self.custom_field = CustomFieldState::default();
         // Restore global subscriptions now that no modal is active.
         self.app.unlock_subs();
+    }
+
+    fn unmount_form_fields(&mut self) {
+        // In Edit mode the path field (index 0) is NOT mounted, so we start
+        // from first_focus_idx(). The notes field uses Id::FormNotes.
+        let first = self.form.first_focus_idx();
+        let notes_idx = self.form.notes_focus_idx();
+        let count = self.form.field_count();
+        for i in first..(first + count) {
+            if i == notes_idx {
+                let _ = self.app.umount(&Id::FormNotes);
+            } else {
+                let _ = self.app.umount(&Id::FormField(i));
+            }
+        }
+    }
+
+    fn mount_custom_field_inputs(&mut self) {
+        let key_input = CustomFieldInput::new("Key", &self.custom_field.key);
+        self.app
+            .mount(Id::CustomFieldKey, Box::new(key_input), vec![])
+            .expect("mount custom field key");
+
+        let value_input = CustomFieldInput::new("Value", &self.custom_field.value);
+        self.app
+            .mount(Id::CustomFieldValue, Box::new(value_input), vec![])
+            .expect("mount custom field value");
+
+        self.custom_field.focus_idx = 0;
+        let _ = self.app.active(&Id::CustomFieldKey);
+    }
+
+    fn unmount_custom_field_inputs(&mut self) {
+        let _ = self.app.umount(&Id::CustomFieldKey);
+        let _ = self.app.umount(&Id::CustomFieldValue);
+    }
+
+    fn open_custom_field_prompt(&mut self) {
+        let parent_mode = match self.overlay {
+            Overlay::Form(mode) => mode,
+            _ => return,
+        };
+
+        self.collect_form_values();
+        self.unmount_form_fields();
+        self.custom_field = CustomFieldState {
+            parent_mode,
+            ..CustomFieldState::default()
+        };
+        self.overlay = Overlay::CustomField;
+        self.mount_custom_field_inputs();
+    }
+
+    fn return_to_parent_form(&mut self) {
+        let parent_mode = self.custom_field.parent_mode;
+        self.unmount_custom_field_inputs();
+        self.custom_field = CustomFieldState {
+            parent_mode,
+            ..CustomFieldState::default()
+        };
+        self.overlay = Overlay::Form(parent_mode);
+        self.mount_form_fields(parent_mode);
+    }
+
+    fn advance_custom_field_focus(&mut self, delta: i32) {
+        if self.overlay != Overlay::CustomField {
+            return;
+        }
+
+        let count = 2usize;
+        let pos = self.custom_field.focus_idx.min(count - 1);
+        let new_pos = if delta >= 0 {
+            (pos + delta as usize) % count
+        } else {
+            (pos + count - ((-delta) as usize % count)) % count
+        };
+        self.custom_field.focus_idx = new_pos;
+        let id = if new_pos == 0 {
+            Id::CustomFieldKey
+        } else {
+            Id::CustomFieldValue
+        };
+        let _ = self.app.active(&id);
+    }
+
+    fn submit_custom_field(&mut self) {
+        if self.overlay != Overlay::CustomField {
+            return;
+        }
+
+        if let Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(v))) =
+            self.app.state(&Id::CustomFieldKey)
+        {
+            self.custom_field.key = v;
+        }
+        if let Ok(tuirealm::state::State::Single(tuirealm::state::StateValue::String(v))) =
+            self.app.state(&Id::CustomFieldValue)
+        {
+            self.custom_field.value = v;
+        }
+
+        match upsert_custom_field(
+            &mut self.form,
+            &self.custom_field.key,
+            &self.custom_field.value,
+        ) {
+            Ok(()) => self.return_to_parent_form(),
+            Err(e) => {
+                self.custom_field.error = Some(e);
+            }
+        }
     }
 
     /// Open the template-pick modal (step 1 of create).
@@ -2182,6 +2303,83 @@ mod tests {
         assert!(
             model.store.show("web/x").unwrap().otp_uri().is_none(),
             "OTP URI must be cleared"
+        );
+    }
+
+    #[test]
+    fn open_custom_field_from_edit_form_shows_prompt() {
+        let mut store = FakeStore::new();
+        store.seed("web/x", "pw\nuser: alice\n");
+        let mut model = test_model(store);
+
+        model.open_edit_form("web/x");
+        assert_eq!(model.overlay, Overlay::Form(FormMode::Edit));
+
+        model.update(Some(Msg::OpenCustomField));
+
+        assert_eq!(model.overlay, Overlay::CustomField);
+        assert_eq!(model.custom_field.parent_mode, FormMode::Edit);
+        assert!(model.app.mounted(&Id::CustomFieldKey));
+        assert!(model.app.mounted(&Id::CustomFieldValue));
+    }
+
+    #[test]
+    fn submit_custom_field_returns_to_edit_form_with_new_field() {
+        let mut store = FakeStore::new();
+        store.seed("web/x", "pw\nuser: alice\n");
+        let mut model = test_model(store);
+
+        model.open_edit_form("web/x");
+        model.update(Some(Msg::OpenCustomField));
+        let _ = model.app.attr(
+            &Id::CustomFieldKey,
+            Attribute::Value,
+            AttrValue::String("account_id".to_string()),
+        );
+        let _ = model.app.attr(
+            &Id::CustomFieldValue,
+            Attribute::Value,
+            AttrValue::String("acct_123".to_string()),
+        );
+
+        model.update(Some(Msg::SubmitCustomField));
+
+        assert_eq!(model.overlay, Overlay::Form(FormMode::Edit));
+        assert!(
+            model
+                .form
+                .fields
+                .contains(&("account_id".to_string(), "acct_123".to_string()))
+        );
+        assert_eq!(model.form.notes_focus_idx(), 6);
+        assert!(model.app.mounted(&Id::FormNotes));
+    }
+
+    #[test]
+    fn save_edit_serializes_custom_field_before_notes() {
+        let mut store = FakeStore::new();
+        store.seed("web/x", "pw\nuser: alice\noriginal note\n");
+        let mut model = test_model(store);
+        model.selected_path = Some("web/x".to_string());
+        model.form = FormState {
+            path: "web/x".to_string(),
+            password: "pw".to_string(),
+            fields: vec![
+                ("user".to_string(), "alice".to_string()),
+                ("account_id".to_string(), "acct_123".to_string()),
+            ],
+            notes: "original note".to_string(),
+            mode: FormMode::Edit,
+            ..FormState::default()
+        };
+
+        model.save_edit().unwrap();
+        let text = model.store.show("web/x").unwrap().serialize();
+        let custom_idx = text.find("account_id: acct_123").unwrap();
+        let note_idx = text.find("original note").unwrap();
+        assert!(
+            custom_idx < note_idx,
+            "custom fields must serialize before notes: {text:?}"
         );
     }
 

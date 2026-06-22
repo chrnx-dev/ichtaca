@@ -185,6 +185,12 @@ impl AppComponent<Msg, NoUserEvent> for FormField {
                 modifiers: KeyModifiers::CONTROL,
             }) => Some(Msg::SubmitForm),
 
+            // Ctrl-a: add a custom key/value field from any non-path form row.
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
+            }) if !self.is_path => Some(Msg::OpenCustomField),
+
             // Tab — path field: attempt folder autocomplete first (Fix 3).
             //        All other fields: navigate to next field.
             Event::Keyboard(KeyEvent {
@@ -441,5 +447,26 @@ mod tests {
             "",
             "Ctrl-g on non-password must not type a character"
         );
+    }
+
+    #[test]
+    fn ctrl_a_on_non_path_field_opens_custom_field_prompt() {
+        let mut f = FormField::new("user", "", false);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('a'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(msg, Some(Msg::OpenCustomField));
+        assert_eq!(f.get_value(), "", "Ctrl-a must not type into the field");
+    }
+
+    #[test]
+    fn ctrl_a_on_path_field_does_not_open_custom_field_prompt() {
+        let mut f = FormField::new("Path", "", false).with_path();
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('a'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_ne!(msg, Some(Msg::OpenCustomField));
     }
 }

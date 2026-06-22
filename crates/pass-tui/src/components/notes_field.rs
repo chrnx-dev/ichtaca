@@ -309,6 +309,11 @@ impl AppComponent<Msg, NoUserEvent> for NotesField {
             }) => Some(Msg::SubmitForm),
 
             Event::Keyboard(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => Some(Msg::OpenCustomField),
+
+            Event::Keyboard(KeyEvent {
                 code: Key::Tab,
                 modifiers: KeyModifiers::NONE,
             }) => Some(Msg::FormFocusNext),
@@ -444,6 +449,16 @@ mod tests {
             modifiers: KeyModifiers::CONTROL,
         }));
         assert_eq!(msg, Some(Msg::SubmitForm));
+    }
+
+    #[test]
+    fn ctrl_a_emits_open_custom_field() {
+        let mut f = NotesField::default();
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('a'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(msg, Some(Msg::OpenCustomField));
     }
 
     #[test]
