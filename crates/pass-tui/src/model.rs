@@ -34,6 +34,8 @@ pub enum Overlay {
     TemplatePick,
     /// Create or Edit form.
     Form(FormMode),
+    /// Add a key/value field while preserving the parent form state.
+    CustomField,
     Confirm,
 }
 
@@ -107,6 +109,35 @@ impl FormState {
     }
 }
 
+/// Transient state for the add-custom-field prompt.
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct CustomFieldState {
+    pub key: String,
+    pub value: String,
+    pub focus_idx: usize,
+    pub error: Option<String>,
+    pub parent_mode: FormMode,
+}
+
+pub fn upsert_custom_field(
+    form: &mut FormState,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("field key cannot be empty".to_string());
+    }
+
+    if let Some((_, existing_value)) = form.fields.iter_mut().find(|(existing, _)| existing == key)
+    {
+        *existing_value = value.to_string();
+    } else {
+        form.fields.push((key.to_string(), value.to_string()));
+    }
+    Ok(())
+}
+
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 /// Central model for the Ichtaca TUI.
@@ -137,6 +168,8 @@ pub struct Model {
     pub overlay: Overlay,
     /// Form state (only valid while `overlay == Form(_)`).
     pub form: FormState,
+    /// Transient state for the custom-field prompt.
+    pub custom_field: CustomFieldState,
     /// Current search results paths (parallel to the list widget).
     pub search_results: Vec<String>,
     /// Current search query.
@@ -517,6 +550,8 @@ impl Model {
                 let _ = part_idx; // suppress unused-variable warning
             }
 
+            Overlay::CustomField => {}
+
             Overlay::Confirm => {
                 // Confirm dialog: 50% wide, 6 rows
                 let popup = centered_rect_fixed(area, 55, 7);
@@ -732,6 +767,14 @@ impl Model {
                 } else {
                     self.advance_form_focus(-1);
                 }
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::OpenCustomField)
+            | Some(Msg::CustomFieldFocusNext)
+            | Some(Msg::CustomFieldFocusPrev)
+            | Some(Msg::SubmitCustomField) => {
                 self.redraw = true;
                 None
             }
@@ -1034,6 +1077,7 @@ impl Model {
                     }
                 }
             }
+            Overlay::CustomField => {}
             Overlay::Confirm => {
                 let _ = self.app.umount(&Id::ConfirmDialog);
             }
@@ -1591,6 +1635,7 @@ mod tests {
             notice: None,
             overlay: Overlay::None,
             form: FormState::default(),
+            custom_field: CustomFieldState::default(),
             search_results: Vec::new(),
             search_query: String::new(),
             search_content_mode: false,
@@ -2577,6 +2622,7 @@ mod tests {
             notice: None,
             overlay: Overlay::None,
             form: FormState::default(),
+            custom_field: CustomFieldState::default(),
             search_results: Vec::new(),
             search_query: String::new(),
             search_content_mode: false,
@@ -2693,6 +2739,47 @@ mod tests {
         );
         // Notes is the last focus index: first(1) + count(6) - 1 = 6
         assert_eq!(state.notes_focus_idx(), 6, "notes at index 6 in Edit");
+    }
+
+    #[test]
+    fn add_custom_field_appends_before_notes_slot() {
+        let mut state = FormState {
+            mode: FormMode::Edit,
+            fields: vec![("user".to_string(), "alice".to_string())],
+            notes: "hello".to_string(),
+            focus_idx: 1,
+            ..FormState::default()
+        };
+
+        upsert_custom_field(&mut state, "account_id", "acct_123").unwrap();
+
+        assert_eq!(
+            state.fields,
+            vec![
+                ("user".to_string(), "alice".to_string()),
+                ("account_id".to_string(), "acct_123".to_string()),
+            ]
+        );
+        assert_eq!(state.notes_focus_idx(), 6);
+    }
+
+    #[test]
+    fn add_custom_field_rejects_blank_key() {
+        let mut state = FormState::default();
+        let err = upsert_custom_field(&mut state, "  ", "value").unwrap_err();
+        assert_eq!(err, "field key cannot be empty");
+    }
+
+    #[test]
+    fn add_custom_field_updates_duplicate_key() {
+        let mut state = FormState {
+            fields: vec![("user".to_string(), "alice".to_string())],
+            ..FormState::default()
+        };
+
+        upsert_custom_field(&mut state, "user", "bob").unwrap();
+
+        assert_eq!(state.fields, vec![("user".to_string(), "bob".to_string())]);
     }
 
     // ── Fix 3: longest_common_prefix helper ──────────────────────────────────

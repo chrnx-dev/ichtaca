@@ -69,6 +69,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         notice: None,
         overlay: Overlay::None,
         form: FormState::default(),
+        custom_field: model::CustomFieldState::default(),
         search_results: Vec::new(),
         search_query: String::new(),
         search_content_mode: false,

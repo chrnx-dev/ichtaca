@@ -25,6 +25,10 @@ pub enum Id {
     FormTemplate,
     /// Notes textarea in the create/edit form (Enhancement 2).
     FormNotes,
+    /// Custom-field prompt key input.
+    CustomFieldKey,
+    /// Custom-field prompt value input.
+    CustomFieldValue,
     /// Delete-confirm dialog (Phase 3).
     ConfirmDialog,
 }
