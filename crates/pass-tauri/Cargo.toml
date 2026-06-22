@@ -20,6 +20,8 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 passcore = { path = "../passcore" }
+# Keep CI/release builds off time 0.3.50 until its time-macros export issue is fixed upstream.
+time = "=0.3.47"
 
 [dev-dependencies]
 # FakeStore comes from passcore (already a dep)
