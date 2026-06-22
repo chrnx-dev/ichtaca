@@ -258,6 +258,7 @@ impl Model {
                 f,
                 &self.overlay,
                 &self.form,
+                &self.custom_field,
                 self.search_content_mode,
             );
         });
@@ -268,6 +269,7 @@ impl Model {
         f: &mut Frame,
         overlay: &Overlay,
         form: &FormState,
+        custom_field: &CustomFieldState,
         search_content_mode: bool,
     ) {
         let area = f.area();
@@ -550,7 +552,64 @@ impl Model {
                 let _ = part_idx; // suppress unused-variable warning
             }
 
-            Overlay::CustomField => {}
+            Overlay::CustomField => {
+                let popup = centered_rect_fixed(area, 60, 10);
+                f.render_widget(tuirealm::ratatui::widgets::Clear, popup);
+
+                let block = tuirealm::ratatui::widgets::Block::default()
+                    .style(
+                        tuirealm::ratatui::style::Style::default()
+                            .bg(theme::SURFACE)
+                            .fg(theme::TEXT),
+                    )
+                    .borders(tuirealm::ratatui::widgets::Borders::ALL)
+                    .border_style(tuirealm::ratatui::style::Style::default().fg(theme::GOLD))
+                    .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
+                    .title(tuirealm::ratatui::text::Line::from(
+                        tuirealm::ratatui::text::Span::styled(
+                            " Add Custom Field  [Enter/Ctrl-s save · Esc cancel · Tab switch] ",
+                            tuirealm::ratatui::style::Style::default()
+                                .fg(theme::GOLD)
+                                .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                        ),
+                    ));
+                let inner = block.inner(popup);
+                f.render_widget(block, popup);
+
+                let mut constraints = Vec::new();
+                if custom_field.error.is_some() {
+                    constraints.push(Constraint::Length(1));
+                }
+                constraints.push(Constraint::Length(3));
+                constraints.push(Constraint::Length(3));
+
+                let parts = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints(constraints)
+                    .split(inner);
+
+                let mut part_idx = 0usize;
+                if let Some(err) = &custom_field.error {
+                    use tuirealm::ratatui::text::{Line, Span};
+                    use tuirealm::ratatui::widgets::Paragraph;
+                    let err_widget = Paragraph::new(Line::from(Span::styled(
+                        format!(" ⚠  {err}"),
+                        tuirealm::ratatui::style::Style::default()
+                            .fg(theme::COCHINEAL)
+                            .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
+                    )));
+                    f.render_widget(err_widget, parts[part_idx]);
+                    part_idx += 1;
+                }
+
+                if app.mounted(&Id::CustomFieldKey) && part_idx < parts.len() {
+                    app.view(&Id::CustomFieldKey, f, parts[part_idx]);
+                }
+                part_idx += 1;
+                if app.mounted(&Id::CustomFieldValue) && part_idx < parts.len() {
+                    app.view(&Id::CustomFieldValue, f, parts[part_idx]);
+                }
+            }
 
             Overlay::Confirm => {
                 // Confirm dialog: 50% wide, 6 rows

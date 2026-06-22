@@ -4,6 +4,7 @@
 //! `AppComponent<Msg, NoUserEvent>` (event → `Msg` mapping).
 
 pub mod confirm_modal;
+pub mod custom_field_modal;
 pub mod detail;
 pub mod form_modal;
 pub mod header;
@@ -14,6 +15,7 @@ pub mod template_modal;
 pub mod tree;
 
 pub use confirm_modal::ConfirmModal;
+pub use custom_field_modal::CustomFieldInput;
 pub use detail::Detail;
 pub use form_modal::{FormField, FormMode};
 pub use header::Header;
