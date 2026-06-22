@@ -58,6 +58,10 @@ pub enum Msg {
     FormFocusPrev,
     /// Open the add-custom-field prompt from an entry form.
     OpenCustomField,
+    /// Open the custom-field prompt to edit a specific field row.
+    EditCustomField(usize),
+    /// Remove a specific custom field row.
+    RemoveCustomField(usize),
     /// Move focus to the next custom-field prompt input.
     CustomFieldFocusNext,
     /// Move focus to the previous custom-field prompt input.

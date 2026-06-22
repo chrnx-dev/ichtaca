@@ -117,6 +117,7 @@ pub struct CustomFieldState {
     pub focus_idx: usize,
     pub error: Option<String>,
     pub parent_mode: FormMode,
+    pub edit_index: Option<usize>,
 }
 
 pub fn upsert_custom_field(form: &mut FormState, key: &str, value: &str) -> Result<(), String> {
@@ -131,6 +132,40 @@ pub fn upsert_custom_field(form: &mut FormState, key: &str, value: &str) -> Resu
     } else {
         form.fields.push((key.to_string(), value.to_string()));
     }
+    Ok(())
+}
+
+pub fn update_custom_field(
+    form: &mut FormState,
+    index: usize,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("field key cannot be empty".to_string());
+    }
+    if index >= form.fields.len() {
+        return Err("field no longer exists".to_string());
+    }
+    if form
+        .fields
+        .iter()
+        .enumerate()
+        .any(|(i, (existing, _))| i != index && existing == key)
+    {
+        return Err(format!("field '{key}' already exists"));
+    }
+
+    form.fields[index] = (key.to_string(), value.to_string());
+    Ok(())
+}
+
+pub fn remove_custom_field(form: &mut FormState, index: usize) -> Result<(), String> {
+    if index >= form.fields.len() {
+        return Err("field no longer exists".to_string());
+    }
+    form.fields.remove(index);
     Ok(())
 }
 
@@ -390,8 +425,8 @@ impl Model {
                 // Note: Enter saves from single-line fields; Ctrl-s saves from
                 // any field including the Notes textarea (where Enter = newline).
                 let form_title = match mode {
-                    FormMode::Create => " New Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-a add field · Ctrl-g generate · Tab path-complete] ",
-                    FormMode::Edit => " Edit Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-a add field · Ctrl-g generate] ",
+                    FormMode::Create => " New Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-a add · Ctrl-e rename · Ctrl-d del · Ctrl-g generate · Tab path-complete] ",
+                    FormMode::Edit => " Edit Entry  [Enter/Ctrl-s save · Esc cancel · Ctrl-a add · Ctrl-e rename · Ctrl-d del · Ctrl-g generate] ",
                 };
                 let popup_block = tuirealm::ratatui::widgets::Block::default()
                     .style(
@@ -563,7 +598,11 @@ impl Model {
                     .border_type(tuirealm::ratatui::widgets::BorderType::Rounded)
                     .title(tuirealm::ratatui::text::Line::from(
                         tuirealm::ratatui::text::Span::styled(
-                            " Add Custom Field  [Enter/Ctrl-s save · Esc cancel · Tab switch] ",
+                            if custom_field.edit_index.is_some() {
+                                " Edit Custom Field  [Enter/Ctrl-s save · Esc cancel · Tab switch] "
+                            } else {
+                                " Add Custom Field  [Enter/Ctrl-s save · Esc cancel · Tab switch] "
+                            },
                             tuirealm::ratatui::style::Style::default()
                                 .fg(theme::GOLD)
                                 .add_modifier(tuirealm::ratatui::style::Modifier::BOLD),
@@ -832,6 +871,18 @@ impl Model {
 
             Some(Msg::OpenCustomField) => {
                 self.open_custom_field_prompt();
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::EditCustomField(index)) => {
+                self.open_edit_custom_field_prompt(index);
+                self.redraw = true;
+                None
+            }
+
+            Some(Msg::RemoveCustomField(index)) => {
+                self.remove_custom_field_row(index);
                 self.redraw = true;
                 None
             }
@@ -1205,6 +1256,48 @@ impl Model {
         self.mount_custom_field_inputs();
     }
 
+    fn open_edit_custom_field_prompt(&mut self, index: usize) {
+        let parent_mode = match self.overlay {
+            Overlay::Form(mode) => mode,
+            _ => return,
+        };
+
+        self.collect_form_values();
+        let Some((key, value)) = self.form.fields.get(index).cloned() else {
+            self.form.error = Some("field no longer exists".to_string());
+            return;
+        };
+
+        self.unmount_form_fields();
+        self.custom_field = CustomFieldState {
+            key,
+            value,
+            parent_mode,
+            edit_index: Some(index),
+            ..CustomFieldState::default()
+        };
+        self.overlay = Overlay::CustomField;
+        self.mount_custom_field_inputs();
+    }
+
+    fn remove_custom_field_row(&mut self, index: usize) {
+        let mode = match self.overlay {
+            Overlay::Form(mode) => mode,
+            _ => return,
+        };
+
+        self.collect_form_values();
+        match remove_custom_field(&mut self.form, index) {
+            Ok(()) => {
+                self.unmount_form_fields();
+                self.mount_form_fields(mode);
+            }
+            Err(e) => {
+                self.form.error = Some(e);
+            }
+        }
+    }
+
     fn return_to_parent_form(&mut self) {
         let parent_mode = self.custom_field.parent_mode;
         self.unmount_custom_field_inputs();
@@ -1253,11 +1346,22 @@ impl Model {
             self.custom_field.value = v;
         }
 
-        match upsert_custom_field(
-            &mut self.form,
-            &self.custom_field.key,
-            &self.custom_field.value,
-        ) {
+        let result = if let Some(index) = self.custom_field.edit_index {
+            update_custom_field(
+                &mut self.form,
+                index,
+                &self.custom_field.key,
+                &self.custom_field.value,
+            )
+        } else {
+            upsert_custom_field(
+                &mut self.form,
+                &self.custom_field.key,
+                &self.custom_field.value,
+            )
+        };
+
+        match result {
             Ok(()) => self.return_to_parent_form(),
             Err(e) => {
                 self.custom_field.error = Some(e);
@@ -1399,7 +1503,7 @@ impl Model {
         let base = 2usize;
         for (i, (k, v)) in self.form.fields.clone().iter().enumerate() {
             let val_idx = base + i;
-            let val_field = FormField::new(k, v, false);
+            let val_field = FormField::new(k, v, false).with_field_index(i);
             self.app
                 .mount(Id::FormField(val_idx), Box::new(val_field), vec![])
                 .expect("mount value field");
@@ -2350,6 +2454,93 @@ mod tests {
     }
 
     #[test]
+    fn edit_custom_field_prompt_prefills_and_updates_label() {
+        let mut store = FakeStore::new();
+        store.seed("web/x", "pw\nuser: alice\nurl: example.com\n");
+        let mut model = test_model(store);
+
+        model.open_edit_form("web/x");
+        model.update(Some(Msg::EditCustomField(1)));
+
+        assert_eq!(model.overlay, Overlay::CustomField);
+        assert_eq!(model.custom_field.edit_index, Some(1));
+        assert_eq!(model.custom_field.key, "url");
+        assert_eq!(model.custom_field.value, "example.com");
+
+        let _ = model.app.attr(
+            &Id::CustomFieldKey,
+            Attribute::Value,
+            AttrValue::String("homepage".to_string()),
+        );
+        let _ = model.app.attr(
+            &Id::CustomFieldValue,
+            Attribute::Value,
+            AttrValue::String("https://example.com".to_string()),
+        );
+
+        model.update(Some(Msg::SubmitCustomField));
+
+        assert_eq!(model.overlay, Overlay::Form(FormMode::Edit));
+        assert_eq!(
+            model.form.fields,
+            vec![
+                ("user".to_string(), "alice".to_string()),
+                ("homepage".to_string(), "https://example.com".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn remove_custom_field_row_removes_only_field_rows() {
+        let mut store = FakeStore::new();
+        store.seed(
+            "web/x",
+            "pw\notpauth://totp/test?secret=GEZDGNBVGY3TQOJQ\nuser: alice\nurl: example.com\n",
+        );
+        let mut model = test_model(store);
+
+        model.open_edit_form("web/x");
+        model.update(Some(Msg::RemoveCustomField(0)));
+
+        assert_eq!(model.overlay, Overlay::Form(FormMode::Edit));
+        assert_eq!(
+            model.form.fields,
+            vec![("url".to_string(), "example.com".to_string())]
+        );
+        assert_eq!(model.form.password, "pw");
+        assert!(model.form.otp.starts_with("otpauth://"));
+    }
+
+    #[test]
+    fn edit_custom_field_rejects_duplicate_label() {
+        let mut store = FakeStore::new();
+        store.seed("web/x", "pw\nuser: alice\nurl: example.com\n");
+        let mut model = test_model(store);
+
+        model.open_edit_form("web/x");
+        model.update(Some(Msg::EditCustomField(1)));
+        let _ = model.app.attr(
+            &Id::CustomFieldKey,
+            Attribute::Value,
+            AttrValue::String("user".to_string()),
+        );
+        model.update(Some(Msg::SubmitCustomField));
+
+        assert_eq!(model.overlay, Overlay::CustomField);
+        assert_eq!(
+            model.custom_field.error.as_deref(),
+            Some("field 'user' already exists")
+        );
+        assert_eq!(
+            model.form.fields,
+            vec![
+                ("user".to_string(), "alice".to_string()),
+                ("url".to_string(), "example.com".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn save_edit_serializes_custom_field_before_notes() {
         let mut store = FakeStore::new();
         store.seed("web/x", "pw\nuser: alice\noriginal note\n");
@@ -3031,6 +3222,58 @@ mod tests {
         upsert_custom_field(&mut state, "user", "bob").unwrap();
 
         assert_eq!(state.fields, vec![("user".to_string(), "bob".to_string())]);
+    }
+
+    #[test]
+    fn update_custom_field_changes_key_and_value() {
+        let mut state = FormState {
+            fields: vec![("user".to_string(), "alice".to_string())],
+            ..FormState::default()
+        };
+
+        update_custom_field(&mut state, 0, "login", "bob").unwrap();
+
+        assert_eq!(state.fields, vec![("login".to_string(), "bob".to_string())]);
+    }
+
+    #[test]
+    fn update_custom_field_rejects_duplicate_key() {
+        let mut state = FormState {
+            fields: vec![
+                ("user".to_string(), "alice".to_string()),
+                ("url".to_string(), "example.com".to_string()),
+            ],
+            ..FormState::default()
+        };
+
+        let err = update_custom_field(&mut state, 1, "user", "bob").unwrap_err();
+
+        assert_eq!(err, "field 'user' already exists");
+        assert_eq!(
+            state.fields,
+            vec![
+                ("user".to_string(), "alice".to_string()),
+                ("url".to_string(), "example.com".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn remove_custom_field_deletes_row() {
+        let mut state = FormState {
+            fields: vec![
+                ("user".to_string(), "alice".to_string()),
+                ("url".to_string(), "example.com".to_string()),
+            ],
+            ..FormState::default()
+        };
+
+        remove_custom_field(&mut state, 0).unwrap();
+
+        assert_eq!(
+            state.fields,
+            vec![("url".to_string(), "example.com".to_string())]
+        );
     }
 
     // ── Fix 3: longest_common_prefix helper ──────────────────────────────────

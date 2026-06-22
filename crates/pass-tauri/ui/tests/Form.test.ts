@@ -403,6 +403,49 @@ describe('Form (edit) — prefill', () => {
 
     expect(onsaved).toHaveBeenCalled();
   });
+
+  it('edit mode can rename and remove custom field rows', async () => {
+    mockShowMeta.mockResolvedValueOnce({
+      path: 'web/example.com',
+      fields: [
+        ['user', 'alice'],
+        ['account_id', 'acct_123'],
+      ],
+      tags: [],
+      has_otp: true,
+    });
+    mockRevealPassword.mockResolvedValueOnce('pw');
+    mockRevealOtpUri.mockResolvedValueOnce('otpauth://totp/Example?secret=BASE32SECRET');
+    mockUpdateEntry.mockResolvedValueOnce(undefined);
+
+    const { getByTestId, getAllByTestId } = render(Form, {
+      props: {
+        mode: 'edit',
+        path: 'web/example.com',
+        onsaved: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(getAllByTestId('field-row')).toHaveLength(2));
+
+    await fireEvent.input(getByTestId('field-key-1'), { target: { value: 'account' } });
+    await fireEvent.input(getByTestId('field-value-1'), { target: { value: 'acct_456' } });
+    await fireEvent.click(getByTestId('remove-field-0'));
+    await fireEvent.click(getByTestId('save-button'));
+
+    await waitFor(() => {
+      expect(mockUpdateEntry).toHaveBeenCalledWith(
+        'web/example.com',
+        expect.objectContaining({
+          password: 'pw',
+          fields: [['account', 'acct_456']],
+          otp: 'otpauth://totp/Example?secret=BASE32SECRET',
+          tags: [],
+        })
+      );
+    });
+  });
 });
 
 // ── Cancel button ─────────────────────────────────────────────────────────────

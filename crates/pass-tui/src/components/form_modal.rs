@@ -4,8 +4,7 @@
 //!   0  Entry path (only editable in Create; shown as read-only label in Edit)
 //!   1  Password (masked, with Ctrl-g generate shortcut)
 //!   2…n+1 Value inputs for each key/value pair row
-//!          Keys are rendered as fixed muted labels — NOT editable inputs.
-//!          Focus chain skips key labels; only value inputs are focusable.
+//!          Ctrl-e edits the key label; Ctrl-d removes the row.
 //!   n+2 OTP URI
 //!   n+3 Tags (space-separated)
 //!
@@ -23,17 +22,13 @@
 //! and manages the focus chain.  The `FormState` struct lives in `model.rs`
 //! and carries the actual field values extracted for saving.
 //!
-//! ## Field-key labels (Fix 2)
-//! Field keys come from the chosen template (Create) or from the existing
-//! entry (Edit).  They are display-only labels — the user cannot edit them.
-//! The keys are stored in `FormState.fields` as `(key_string, value_string)`
-//! pairs; `collect_form_values` reads the key from `FormState` directly and
-//! only reads the *value* from the mounted widget.
+//! ## Field-key labels
+//! Field keys come from templates, existing entries, or custom user input.
+//! They are shown as each value input's title. Press Ctrl-e on a custom field
+//! row to edit the key/value pair, or Ctrl-d to remove it.
 //!
 //! Empty value → field is written with empty value (`set_field(k, "")`).
 //! Auto-removal of empty-value fields is NOT done; this keeps the logic simple.
-//!
-//! // TODO: optional add-custom-field affordance
 
 use tui_realm_stdlib::components::Input as TuiInput;
 use tuirealm::command::{Cmd, CmdResult};
@@ -77,6 +72,8 @@ pub struct FormField {
     pub is_password: bool,
     /// Whether this is the path field (Tab → PathTabComplete in Create mode).
     pub is_path: bool,
+    /// Index into FormState.fields when this input represents a custom field.
+    pub field_index: Option<usize>,
     /// Whether the password is currently revealed (kept for tests and future use).
     #[allow(dead_code)]
     pub revealed: bool,
@@ -111,6 +108,7 @@ impl FormField {
             label: label.to_string(),
             is_password,
             is_path: false,
+            field_index: None,
             revealed: false,
         }
     }
@@ -118,6 +116,12 @@ impl FormField {
     /// Mark this field as the path field (Tab → `PathTabComplete`).
     pub fn with_path(mut self) -> Self {
         self.is_path = true;
+        self
+    }
+
+    /// Mark this input as the value row for a custom field.
+    pub fn with_field_index(mut self, index: usize) -> Self {
+        self.field_index = Some(index);
         self
     }
 
@@ -190,6 +194,16 @@ impl AppComponent<Msg, NoUserEvent> for FormField {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::CONTROL,
             }) if !self.is_path => Some(Msg::OpenCustomField),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('e'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => self.field_index.map(Msg::EditCustomField),
+
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => self.field_index.map(Msg::RemoveCustomField),
 
             // Tab — path field: attempt folder autocomplete first (Fix 3).
             //        All other fields: navigate to next field.
@@ -468,5 +482,41 @@ mod tests {
             modifiers: KeyModifiers::CONTROL,
         }));
         assert_ne!(msg, Some(Msg::OpenCustomField));
+    }
+
+    #[test]
+    fn ctrl_e_on_custom_field_opens_label_editor() {
+        let mut f = FormField::new("user", "alice", false).with_field_index(2);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('e'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(msg, Some(Msg::EditCustomField(2)));
+    }
+
+    #[test]
+    fn ctrl_d_on_custom_field_requests_removal() {
+        let mut f = FormField::new("user", "alice", false).with_field_index(2);
+        let msg = f.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('d'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        assert_eq!(msg, Some(Msg::RemoveCustomField(2)));
+    }
+
+    #[test]
+    fn fixed_fields_do_not_emit_custom_field_edit_or_remove() {
+        let mut password = FormField::new("Password", "pw", true);
+        let edit = password.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('e'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        let remove = password.on(&Event::Keyboard(KeyEvent {
+            code: Key::Char('d'),
+            modifiers: KeyModifiers::CONTROL,
+        }));
+
+        assert_eq!(edit, None);
+        assert_eq!(remove, None);
     }
 }
