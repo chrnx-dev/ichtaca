@@ -34,12 +34,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Load config; fall back to defaults on error.
     let config = passcore::Config::load().unwrap_or_default();
 
-    // Build the password store; fall back to a fake store on failure.
-    let store: Box<dyn passcore::PasswordStore + Send> =
-        match passcore::PassCliStore::detect(config.store_dir.clone()) {
-            Ok(s) => Box::new(s),
-            Err(_) => Box::new(passcore::FakeStore::new()),
-        };
+    // Initialise the store; exit with actionable guidance on failure.
+    let init = match passcore::init_store(&config) {
+        Ok(init) => init,
+        Err(_) => {
+            let report = passcore::doctor::run(config.store_dir.clone());
+            eprint!("{}", passcore::doctor::guidance(&report));
+            return Err("password store unavailable".into());
+        }
+    };
 
     // Initialise the terminal (crossterm).
     // CrosstermTerminalAdapter::new() installs the panic hook automatically,
@@ -61,7 +64,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         app,
         quit: false,
         redraw: true,
-        store,
+        store: init.store,
+        demo: init.demo,
         config,
         selected_path: None,
         detail_entry: None,
