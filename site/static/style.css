@@ -5,7 +5,7 @@
   --surface: #1E1B26;
   --surface2: #2A2533;
   --text: #E8E2D0;
-  --muted: #6B6478;
+  --muted: #9A93A6;
   --gold: #E0A436;
   --gold-bright: #F2C66D;
   --turquoise: #2FB6A8;
@@ -37,7 +37,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .btn, .feature, .mode-card, .faq-item { transition: none; }
+  .btn, .feature, .mode-card, .faq-item,
+  .shot-card, .dl-card, .nav-links a, details summary::after { transition: none; }
 }
 
 a { color: var(--gold-bright); text-decoration: none; }
