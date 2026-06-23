@@ -35,6 +35,15 @@ mod tests {
     use crate::Config;
     use std::path::PathBuf;
 
+    /// Removes an env var on drop so a panicking assertion can't leave it set
+    /// for other tests in the process.
+    struct EnvGuard(&'static str);
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var(self.0);
+        }
+    }
+
     // NOTE: Both tests mutate the `ICHTACA_DEMO` process env var. They are
     // merged into a single `#[test]` fn so they run sequentially in the same
     // thread, avoiding the race that would occur if cargo ran them concurrently.
@@ -49,9 +58,10 @@ mod tests {
         assert!(init_store(&cfg).is_err());
 
         // --- Case 2: ICHTACA_DEMO=1 → labeled fake store ---
+        // The guard removes the var even if the assertion below panics.
         std::env::set_var("ICHTACA_DEMO", "1");
+        let _guard = EnvGuard("ICHTACA_DEMO");
         let init = init_store(&Config::default()).expect("demo store");
         assert!(init.demo);
-        std::env::remove_var("ICHTACA_DEMO");
     }
 }
