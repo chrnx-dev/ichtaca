@@ -2,6 +2,7 @@
 
 pub mod clipboard;
 pub mod config;
+pub mod doctor;
 pub mod entry;
 pub mod error;
 pub mod generate;
