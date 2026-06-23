@@ -125,11 +125,12 @@
       allPaths = await list();
       tree = buildTree(allPaths);
     } catch (e) {
-      showError(
-        `Could not connect to the password store. ` +
-        `Make sure 'pass' and 'gpg' are installed and the store is initialised. ` +
-        `Error: ${e instanceof Error ? e.message : String(e)}`
-      );
+      setup = {
+        pass: false, gpg: false, store_dir_exists: false, store_dir: '',
+        ok: false, guidance: '',
+        demo: false,
+        init_error: `Could not run environment check: ${e instanceof Error ? e.message : String(e)}`,
+      };
     } finally {
       isLoading = false;
     }

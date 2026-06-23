@@ -150,7 +150,7 @@ Running `ichtaca` with no arguments launches the interactive TUI. Running `ichta
 | `ichtaca show <path> [--json]` | Print metadata only: path, fields, tags, `has_otp`. **Does not print the password or OTP URI.** |
 | `ichtaca otp <path>` | Print the current TOTP code |
 | `ichtaca copy <path>` | Copy the password to the clipboard, then clear it after the configured `clear_after` timeout (blocks until cleared; Ctrl-C to keep). If `clear_after` is 0, copies and returns immediately without clearing. |
-| `ichtaca generate <path> [--length N] [--no-symbols]` | Generate and store a password; **refuses if the entry already exists** |
+| `ichtaca generate <path> [--length N] [--no-symbols]` | Generate and store a password, then print it to stdout; **refuses if the entry already exists** |
 | `ichtaca set <path> [--password-stdin] [--field key=value ...]` | Create or update an entry; preserves existing OTP, tags, and fields |
 
 #### `ichtaca show` JSON shape

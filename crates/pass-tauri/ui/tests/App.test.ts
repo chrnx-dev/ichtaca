@@ -94,4 +94,17 @@ describe('App.svelte – doctor gate', () => {
       expect(getByText('DEMO')).toBeInTheDocument();
     });
   });
+
+  it('renders SetupScreen (not a permanent spinner) when doctor() throws', async () => {
+    mockDoctor.mockRejectedValueOnce(new Error('IPC channel closed'));
+
+    const { getByTestId, queryByTestId } = render(App);
+
+    await waitFor(() => {
+      expect(getByTestId('setup-screen')).toBeInTheDocument();
+    });
+
+    expect(queryByTestId('new-button')).toBeNull();
+    expect(mockList).not.toHaveBeenCalled();
+  });
 });

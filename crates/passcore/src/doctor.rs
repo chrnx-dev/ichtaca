@@ -48,11 +48,16 @@ pub fn guidance(report: &Report) -> String {
     if !report.store {
         missing.push("password store");
     }
+    let install = if cfg!(target_os = "macos") {
+        "  brew install pass gnupg".to_string()
+    } else {
+        "  # Debian/Ubuntu: sudo apt install pass gnupg\n  # Fedora: sudo dnf install pass gnupg\n  # Arch: sudo pacman -S pass gnupg".to_string()
+    };
     format!(
         "Ichtaca could not open your password store.\n\n\
          Missing: {}\n\
          Expected store: {}\n\n\
-         Install and initialize:\n\n  brew install pass gnupg\n  gpg --full-generate-key\n  pass init <your-gpg-key-id>\n",
+         Install and initialize:\n\n{install}\n  gpg --full-generate-key\n  pass init <your-gpg-key-id>\n",
         missing.join(", "),
         report.store_dir.display(),
     )

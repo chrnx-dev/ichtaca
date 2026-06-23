@@ -3,10 +3,10 @@
 
   let { report }: { report: DoctorReport } = $props();
 
-  const checks: { label: string; ok: boolean }[] = $derived([
-    { label: '`pass` binary', ok: report.pass },
-    { label: '`gpg` binary', ok: report.gpg },
-    { label: `Password store (\`${report.store_dir}\`)`, ok: report.store_dir_exists },
+  const checks: { label: string; ok: boolean; html?: true }[] = $derived([
+    { label: '<code>pass</code> binary', ok: report.pass, html: true },
+    { label: '<code>gpg</code> binary', ok: report.gpg, html: true },
+    { label: `Password store (<code>${report.store_dir}</code>)`, ok: report.store_dir_exists, html: true },
   ]);
 
   const guidance = $derived(report.guidance || report.init_error || '');
@@ -37,7 +37,7 @@
           {:else}
             <span class="text-error font-bold w-4 text-center" role="img" aria-label="fail">✗</span>
           {/if}
-          <span class="text-base-content">{check.label}</span>
+          <span class="text-base-content">{#if check.html}{@html check.label}{:else}{check.label}{/if}</span>
         </div>
       {/each}
     </div>

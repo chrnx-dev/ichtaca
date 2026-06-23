@@ -53,7 +53,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 eprint!("{guidance}");
             }
-            std::process::exit(1);
+            std::process::exit(cli::exit_code(&e));
         }
     };
 
