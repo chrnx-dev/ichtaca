@@ -25,7 +25,7 @@ All notable changes to **Ichtaca** are documented here. The format is based on
   - `ichtaca get <path>` — print the password to stdout (no trailing newline; pipe-safe).
   - `ichtaca show <path> [--json]` — metadata only (path, fields, tags, `has_otp`); never prints the password or OTP URI.
   - `ichtaca otp <path>` — print the current TOTP code.
-  - `ichtaca copy <path>` — copy the password to clipboard; blocks until auto-cleared (`clear_after` timeout); Ctrl-C to keep.
+  - `ichtaca copy <path>` — copy the password to clipboard, then clear it after the configured `clear_after` timeout (blocks until cleared; Ctrl-C to keep). If `clear_after` is 0, copies and returns immediately without clearing.
   - `ichtaca generate <path> [--length N] [--no-symbols]` — generate and store a password; refuses if the entry already exists (default length 32).
   - `ichtaca set <path> [--password-stdin] [--field key=value ...]` — create/update an entry; reads password from stdin only; read-modify-write preserves existing OTP, tags, and fields.
 - **Stable exit codes:** `0` success · `1` user/input error · `2` missing dependency or
