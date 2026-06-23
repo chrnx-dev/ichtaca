@@ -3,6 +3,7 @@
 //! Phase 3: search modal, create/edit form modal, delete confirm, raw edit,
 //! and tree refresh after writes — on top of the Phase-2 browse stack.
 
+mod cli;
 mod components;
 mod domain;
 mod id;
@@ -24,8 +25,13 @@ use model::{FormState, Model, Overlay};
 use msg::Msg;
 
 fn main() {
+    use clap::Parser;
+    let cli = cli::Cli::parse();
+    if let Some(cmd) = cli.cmd {
+        std::process::exit(cli::dispatch(cmd));
+    }
     if let Err(e) = run() {
-        eprintln!("pass-tui: {e}");
+        eprintln!("ichtaca: {e}");
         std::process::exit(1);
     }
 }
