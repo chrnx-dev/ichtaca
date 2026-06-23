@@ -2,6 +2,8 @@
 //! runs here and exits. Every command reuses `passcore` — no store/parse logic
 //! is duplicated.
 
+mod commands;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -49,10 +51,40 @@ pub enum Command {
     Doctor,
 }
 
+/// CLI-layer error: either a passcore failure or a usage/input problem.
+pub enum CliError {
+    Pass(passcore::PassError),
+    /// User/input error (bad argument, entry has no OTP, etc.) — exit code 1.
+    Usage(String),
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Pass(e) => write!(f, "{e}"),
+            CliError::Usage(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+impl From<passcore::PassError> for CliError {
+    fn from(e: passcore::PassError) -> Self {
+        CliError::Pass(e)
+    }
+}
+
+impl CliError {
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            CliError::Pass(e) => exit_code(e),
+            CliError::Usage(_) => 1,
+        }
+    }
+}
+
 /// Map a `PassError` to a stable process exit code. Part of the CLI's public
 /// contract — do not reshuffle without a version note.
 /// 0 success · 1 user/input · 2 missing dependency/store · 3 store/decrypt failure.
-#[allow(dead_code)] // used by Tasks 10/11 when real commands are implemented
 pub fn exit_code(err: &passcore::PassError) -> i32 {
     use passcore::PassError::*;
     match err {
@@ -66,10 +98,13 @@ pub fn exit_code(err: &passcore::PassError) -> i32 {
 pub fn dispatch(cmd: Command) -> i32 {
     match cmd {
         Command::Doctor => doctor(),
-        _ => {
-            eprintln!("ichtaca: this command is not yet implemented");
-            1
-        }
+        other => match commands::run(other) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("ichtaca: {e}");
+                e.exit_code()
+            }
+        },
     }
 }
 
