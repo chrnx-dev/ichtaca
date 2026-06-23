@@ -34,12 +34,22 @@ pub enum Command {
         no_symbols: bool,
     },
     /// Create/update an entry; password read from stdin with --password-stdin.
+    /// Repeat --field/--tag/--remove-field/--remove-tag for multiple values.
     Set {
         path: String,
         #[arg(long)]
         password_stdin: bool,
         #[arg(long = "field")]
         fields: Vec<String>,
+        /// Add a tag (repeatable).
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        /// Remove a field by key (repeatable).
+        #[arg(long = "remove-field")]
+        remove_fields: Vec<String>,
+        /// Remove a tag (repeatable).
+        #[arg(long = "remove-tag")]
+        remove_tags: Vec<String>,
     },
     /// Show an entry's metadata (use --json for machine-readable output).
     Show {

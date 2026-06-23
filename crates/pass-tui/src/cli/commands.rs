@@ -18,8 +18,8 @@ pub fn run(cmd: Command) -> CliResult {
         Command::Generate { path, length, no_symbols } => {
             generate(&config, &path, length, no_symbols)
         }
-        Command::Set { path, password_stdin, fields } => {
-            set(&config, &path, password_stdin, &fields)
+        Command::Set { path, password_stdin, fields, tags, remove_fields, remove_tags } => {
+            set(&config, &path, password_stdin, &fields, &tags, &remove_fields, &remove_tags)
         }
         Command::Doctor => unreachable!("Doctor is handled in dispatch"),
     }
@@ -103,10 +103,20 @@ fn set(
     path: &str,
     password_stdin: bool,
     fields: &[String],
+    tags: &[String],
+    remove_fields: &[String],
+    remove_tags: &[String],
 ) -> CliResult {
-    if !password_stdin && fields.is_empty() {
+    if !password_stdin
+        && fields.is_empty()
+        && tags.is_empty()
+        && remove_fields.is_empty()
+        && remove_tags.is_empty()
+    {
         return Err(CliError::Usage(
-            "nothing to set: pass --password-stdin and/or --field key=value".into(),
+            "nothing to set: pass --password-stdin, --field key=value, --tag, \
+             --remove-field, and/or --remove-tag"
+                .into(),
         ));
     }
     let parsed: Vec<(String, String)> = fields
@@ -127,19 +137,47 @@ fn set(
     } else {
         None
     };
-    apply_set(&mut entry, pw.as_deref(), &parsed);
+    apply_set(&mut entry, pw.as_deref(), &parsed, remove_fields, tags, remove_tags);
     init.store
         .insert(path, &passcore::Secret::from(entry.serialize()), true)?;
     Ok(())
 }
 
-/// Apply password and field updates to an entry. Extracted for unit testing.
-fn apply_set(entry: &mut passcore::Entry, password: Option<&str>, fields: &[(String, String)]) {
+/// Apply password, field, and tag mutations to an entry. Extracted for unit testing.
+///
+/// Order of operations:
+/// 1. Set password (if provided)
+/// 2. Set/add fields
+/// 3. Remove fields (nonexistent key → silent no-op)
+/// 4. Merge tags: existing + add_tags (dedup, preserve order) − remove_tags;
+///    only calls `set_tags` when add_tags or remove_tags is non-empty.
+fn apply_set(
+    entry: &mut passcore::Entry,
+    password: Option<&str>,
+    fields: &[(String, String)],
+    remove_fields: &[String],
+    add_tags: &[String],
+    remove_tags: &[String],
+) {
     if let Some(pw) = password {
         entry.set_password(pw);
     }
     for (k, v) in fields {
         entry.set_field(k, v);
+    }
+    for k in remove_fields {
+        entry.remove_field(k);
+    }
+    if !add_tags.is_empty() || !remove_tags.is_empty() {
+        let mut final_tags: Vec<String> = entry.tags();
+        for tag in add_tags {
+            let t = tag.trim_start_matches('@').to_string();
+            if !t.is_empty() && !final_tags.iter().any(|x| x == &t) {
+                final_tags.push(t);
+            }
+        }
+        final_tags.retain(|t| !remove_tags.iter().any(|r| r.trim_start_matches('@') == t));
+        entry.set_tags(&final_tags);
     }
 }
 
@@ -287,7 +325,7 @@ mod tests {
         let mut entry =
             Entry::parse("oldpass\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
         let fields = vec![("email".to_string(), "a@b.com".to_string())];
-        apply_set(&mut entry, Some("newpass"), &fields);
+        apply_set(&mut entry, Some("newpass"), &fields, &[], &[], &[]);
 
         assert_eq!(entry.password(), "newpass", "password updated");
         assert_eq!(
@@ -306,9 +344,86 @@ mod tests {
     #[test]
     fn apply_set_no_password_preserves_existing() {
         let mut entry = Entry::parse("existing\nuser: bob\n");
-        apply_set(&mut entry, None, &[("url".to_string(), "x.com".to_string())]);
+        apply_set(&mut entry, None, &[("url".to_string(), "x.com".to_string())], &[], &[], &[]);
         assert_eq!(entry.password(), "existing", "password unchanged");
         assert_eq!(entry.field("url"), Some("x.com"));
+    }
+
+    // ── apply_set tag/field removal ──────────────────────────────────────────
+
+    #[test]
+    fn apply_set_adds_tag_dedups_and_preserves() {
+        // Entry has @work already; add "work" + "dev" — "work" must not duplicate.
+        let mut entry =
+            Entry::parse("pw\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
+        apply_set(
+            &mut entry,
+            None,
+            &[],
+            &[],
+            &["work".to_string(), "dev".to_string()],
+            &[],
+        );
+
+        let tags = entry.tags();
+        assert_eq!(
+            tags.iter().filter(|t| t.as_str() == "work").count(),
+            1,
+            "work must appear exactly once, got {tags:?}"
+        );
+        assert!(tags.iter().any(|t| t == "dev"), "dev tag must be present");
+        assert_eq!(entry.password(), "pw", "password preserved");
+        assert_eq!(entry.field("user"), Some("alice"), "user field preserved");
+        assert!(entry.otp_uri().is_some(), "OTP preserved");
+    }
+
+    #[test]
+    fn apply_set_removes_field_only_target() {
+        let mut entry =
+            Entry::parse("pw\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
+        apply_set(
+            &mut entry,
+            None,
+            &[("url".to_string(), "https://x.com".to_string())],
+            &["user".to_string()],
+            &[],
+            &[],
+        );
+
+        assert_eq!(entry.field("user"), None, "user field must be removed");
+        assert_eq!(entry.field("url"), Some("https://x.com"), "url field added");
+        assert!(entry.otp_uri().is_some(), "OTP intact");
+        assert!(entry.tags().iter().any(|t| t == "work"), "work tag intact");
+        assert_eq!(entry.password(), "pw", "password intact");
+    }
+
+    #[test]
+    fn apply_set_removes_tag_only_target() {
+        let mut entry = Entry::parse("pw\nuser: bob\n@work @dev\n");
+        apply_set(&mut entry, None, &[], &[], &[], &["dev".to_string()]);
+
+        let tags = entry.tags();
+        assert!(tags.iter().any(|t| t == "work"), "work must remain");
+        assert!(!tags.iter().any(|t| t == "dev"), "dev must be removed");
+        assert_eq!(entry.field("user"), Some("bob"), "user field intact");
+        assert_eq!(entry.password(), "pw", "password intact");
+    }
+
+    #[test]
+    fn apply_set_no_tag_change_leaves_tags_untouched() {
+        let mut entry = Entry::parse("pw\nuser: bob\n@work @dev\n");
+        let tags_before = entry.tags();
+        // Pass empty add/remove — set_tags must NOT be called, tags unchanged.
+        apply_set(
+            &mut entry,
+            None,
+            &[("url".to_string(), "x.com".to_string())],
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(entry.tags(), tags_before, "tags must be unchanged");
+        assert_eq!(entry.field("url"), Some("x.com"), "url field added");
     }
 
     /// Entry with password, a user field, an otp URI, and a @work tag.

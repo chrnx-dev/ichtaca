@@ -151,7 +151,7 @@ Running `ichtaca` with no arguments launches the interactive TUI. Running `ichta
 | `ichtaca otp <path>` | Print the current TOTP code |
 | `ichtaca copy <path>` | Copy the password to the clipboard, then clear it after the configured `clear_after` timeout (blocks until cleared; Ctrl-C to keep). If `clear_after` is 0, copies and returns immediately without clearing. |
 | `ichtaca generate <path> [--length N] [--no-symbols]` | Generate and store a password, then print it to stdout; **refuses if the entry already exists** |
-| `ichtaca set <path> [--password-stdin] [--field key=value ...]` | Create or update an entry; preserves existing OTP, tags, and fields |
+| `ichtaca set <path> [--password-stdin] [--field key=value ...] [--tag tag ...] [--remove-field key ...] [--remove-tag tag ...]` | Create or update an entry; preserves existing OTP, tags, and fields |
 
 #### `ichtaca show` JSON shape
 
@@ -163,7 +163,7 @@ The password and raw OTP URI are intentionally excluded.
 
 #### `ichtaca set` — secrets via stdin, never argv
 
-Passwords are always read from stdin using `--password-stdin`. This keeps secrets out of shell history and process listings. Repeat `--field` for multiple fields.
+Passwords are always read from stdin using `--password-stdin`. This keeps secrets out of shell history and process listings. Repeat `--field`/`--tag`/`--remove-field`/`--remove-tag` for multiple values. All flags are optional but at least one must be provided.
 
 #### `ichtaca generate` defaults
 
@@ -186,6 +186,12 @@ printf 'hunter2\n' | ichtaca set web/example.com --password-stdin --field user=m
 
 # Add fields to an existing entry without changing the password
 ichtaca set web/example.com --field url=https://example.com
+
+# Add tags and a field in one shot
+ichtaca set web/gh --field user=me --tag work --tag dev
+
+# Remove a stale field and a tag
+ichtaca set web/gh --remove-field old --remove-tag dev
 
 # Show metadata as JSON and pretty-print it
 ichtaca show web/example.com --json | jq .
