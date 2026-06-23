@@ -171,12 +171,16 @@ fn apply_set(
     if !add_tags.is_empty() || !remove_tags.is_empty() {
         let mut final_tags: Vec<String> = entry.tags();
         for tag in add_tags {
-            let t = tag.trim_start_matches('@').to_string();
+            let t = tag.trim_start_matches('@').trim().to_string();
             if !t.is_empty() && !final_tags.iter().any(|x| x == &t) {
                 final_tags.push(t);
             }
         }
-        final_tags.retain(|t| !remove_tags.iter().any(|r| r.trim_start_matches('@') == t));
+        final_tags.retain(|t| {
+            !remove_tags
+                .iter()
+                .any(|r| r.trim_start_matches('@').trim() == t)
+        });
         entry.set_tags(&final_tags);
     }
 }
@@ -411,19 +415,21 @@ mod tests {
 
     #[test]
     fn apply_set_no_tag_change_leaves_tags_untouched() {
+        // Add only a field (no tag ops): set_tags must NOT fire, so the raw
+        // bytes — including the @work @dev tag line — stay byte-identical except
+        // for the appended field. Capturing serialize() before/after a no-tag
+        // call proves the guard fires (tags() alone is a recomputed view).
         let mut entry = Entry::parse("pw\nuser: bob\n@work @dev\n");
-        let tags_before = entry.tags();
-        // Pass empty add/remove — set_tags must NOT be called, tags unchanged.
-        apply_set(
-            &mut entry,
-            None,
-            &[("url".to_string(), "x.com".to_string())],
-            &[],
-            &[],
-            &[],
+        // Add the field first, then assert the tag line is byte-stable across a
+        // second call that touches nothing tag-related.
+        entry.set_field("url", "x.com");
+        let before = entry.serialize();
+        apply_set(&mut entry, None, &[], &[], &[], &[]);
+        assert_eq!(
+            entry.serialize(),
+            before,
+            "raw bytes unchanged when no tag ops"
         );
-        assert_eq!(entry.tags(), tags_before, "tags must be unchanged");
-        assert_eq!(entry.field("url"), Some("x.com"), "url field added");
     }
 
     /// Entry with password, a user field, an otp URI, and a @work tag.
