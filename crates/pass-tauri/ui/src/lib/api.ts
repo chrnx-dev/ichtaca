@@ -7,9 +7,14 @@
  * `vi.mock('@tauri-apps/api/core')`.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { EntryInput, EntryMeta, EntryNode, OtpCode, UpdateInput } from './types';
+import type { DoctorReport, EntryInput, EntryMeta, EntryNode, OtpCode, UpdateInput } from './types';
 
 // ── Command wrappers ──────────────────────────────────────────────────────────
+
+/** Returns environment diagnostics for the first-run/setup check. */
+export function doctor(): Promise<DoctorReport> {
+  return invoke('doctor');
+}
 
 /** Returns all password entry paths (flat list). */
 export function list(): Promise<string[]> {

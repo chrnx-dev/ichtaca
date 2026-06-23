@@ -6,9 +6,11 @@
   import Form from './components/Form.svelte';
   import ConfirmModal from './components/ConfirmModal.svelte';
   import SearchBar from './components/SearchBar.svelte';
-  import { list, showMeta, remove, buildTree } from './lib/api';
-  import type { EntryMeta, EntryNode } from './lib/types';
+  import SetupScreen from './components/SetupScreen.svelte';
+  import { doctor, list, showMeta, remove, buildTree } from './lib/api';
+  import type { DoctorReport, EntryMeta, EntryNode } from './lib/types';
 
+  let setup = $state<DoctorReport | null>(null);
   let tree = $state<EntryNode[]>([]);
   let selectedPath = $state<string | null>(null);
   let meta = $state<EntryMeta | null>(null);
@@ -116,6 +118,11 @@
 
   onMount(async () => {
     try {
+      setup = await doctor();
+      if (!setup.ok) {
+        isLoading = false;
+        return;
+      }
       allPaths = await list();
       tree = buildTree(allPaths);
     } catch (e) {
@@ -130,6 +137,9 @@
   });
 </script>
 
+{#if setup && !setup.ok}
+  <SetupScreen report={setup} />
+{:else}
 <div class="flex flex-col h-screen bg-[#15131A] text-base-content">
   <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
   <div class="navbar bg-base-100 border-b border-neutral/30 flex-shrink-0 min-h-12 px-3 gap-3">
@@ -137,6 +147,9 @@
     <div class="flex-shrink-0 flex items-baseline gap-1.5">
       <span class="text-primary font-bold tracking-widest text-sm uppercase">ICHTACA</span>
       <span class="text-neutral text-xs">· lo oculto</span>
+      {#if setup?.demo}
+        <span class="badge badge-warning badge-xs ml-1 uppercase font-bold">DEMO</span>
+      {/if}
     </div>
 
     <!-- Search -->
@@ -236,4 +249,5 @@
     onconfirm={handleDeleteConfirm}
     oncancel={() => { showDeleteModal = false; }}
   />
+{/if}
 {/if}
