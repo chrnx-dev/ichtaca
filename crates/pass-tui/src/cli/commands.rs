@@ -15,12 +15,27 @@ pub fn run(cmd: Command) -> CliResult {
         Command::Show { path, json } => show(&config, &path, json),
         Command::Otp { path } => otp(&config, &path),
         Command::Copy { path } => copy(&config, &path),
-        Command::Generate { path, length, no_symbols } => {
-            generate(&config, &path, length, no_symbols)
-        }
-        Command::Set { path, password_stdin, fields, tags, remove_fields, remove_tags } => {
-            set(&config, &path, password_stdin, &fields, &tags, &remove_fields, &remove_tags)
-        }
+        Command::Generate {
+            path,
+            length,
+            no_symbols,
+        } => generate(&config, &path, length, no_symbols),
+        Command::Set {
+            path,
+            password_stdin,
+            fields,
+            tags,
+            remove_fields,
+            remove_tags,
+        } => set(
+            &config,
+            &path,
+            password_stdin,
+            &fields,
+            &tags,
+            &remove_fields,
+            &remove_tags,
+        ),
         Command::Doctor => unreachable!("Doctor is handled in dispatch"),
     }
 }
@@ -81,12 +96,7 @@ fn copy(config: &passcore::Config, path: &str) -> CliResult {
     Ok(())
 }
 
-fn generate(
-    config: &passcore::Config,
-    path: &str,
-    length: usize,
-    no_symbols: bool,
-) -> CliResult {
+fn generate(config: &passcore::Config, path: &str, length: usize, no_symbols: bool) -> CliResult {
     let mut init = passcore::init_store(config)?;
     if init.store.list()?.iter().any(|p| p == path) {
         return Err(CliError::Usage(format!(
@@ -137,7 +147,14 @@ fn set(
     } else {
         None
     };
-    apply_set(&mut entry, pw.as_deref(), &parsed, remove_fields, tags, remove_tags);
+    apply_set(
+        &mut entry,
+        pw.as_deref(),
+        &parsed,
+        remove_fields,
+        tags,
+        remove_tags,
+    );
     init.store
         .insert(path, &passcore::Secret::from(entry.serialize()), true)?;
     Ok(())
@@ -262,7 +279,11 @@ pub(crate) fn show_plain(entry: &passcore::Entry, path: &str) -> String {
     if !tags.is_empty() {
         out.push_str(&format!("tags: {}\n", tags.join(", ")));
     }
-    let otp_label = if entry.otp_uri().is_some() { "yes" } else { "no" };
+    let otp_label = if entry.otp_uri().is_some() {
+        "yes"
+    } else {
+        "no"
+    };
     out.push_str(&format!("otp: {otp_label}\n"));
     out
 }
@@ -326,17 +347,12 @@ mod tests {
 
     #[test]
     fn apply_set_preserves_otp_and_tags() {
-        let mut entry =
-            Entry::parse("oldpass\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
+        let mut entry = Entry::parse("oldpass\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
         let fields = vec![("email".to_string(), "a@b.com".to_string())];
         apply_set(&mut entry, Some("newpass"), &fields, &[], &[], &[]);
 
         assert_eq!(entry.password(), "newpass", "password updated");
-        assert_eq!(
-            entry.field("email"),
-            Some("a@b.com"),
-            "new field present"
-        );
+        assert_eq!(entry.field("email"), Some("a@b.com"), "new field present");
         assert_eq!(entry.field("user"), Some("alice"), "existing field intact");
         assert!(entry.otp_uri().is_some(), "OTP URI must be preserved");
         assert!(
@@ -348,7 +364,14 @@ mod tests {
     #[test]
     fn apply_set_no_password_preserves_existing() {
         let mut entry = Entry::parse("existing\nuser: bob\n");
-        apply_set(&mut entry, None, &[("url".to_string(), "x.com".to_string())], &[], &[], &[]);
+        apply_set(
+            &mut entry,
+            None,
+            &[("url".to_string(), "x.com".to_string())],
+            &[],
+            &[],
+            &[],
+        );
         assert_eq!(entry.password(), "existing", "password unchanged");
         assert_eq!(entry.field("url"), Some("x.com"));
     }
@@ -358,8 +381,7 @@ mod tests {
     #[test]
     fn apply_set_adds_tag_dedups_and_preserves() {
         // Entry has @work already; add "work" + "dev" — "work" must not duplicate.
-        let mut entry =
-            Entry::parse("pw\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
+        let mut entry = Entry::parse("pw\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
         apply_set(
             &mut entry,
             None,
@@ -383,8 +405,7 @@ mod tests {
 
     #[test]
     fn apply_set_removes_field_only_target() {
-        let mut entry =
-            Entry::parse("pw\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
+        let mut entry = Entry::parse("pw\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
         apply_set(
             &mut entry,
             None,

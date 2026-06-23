@@ -7,7 +7,11 @@ mod commands;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "ichtaca", version, about = "Pass-compatible password manager (TUI + CLI)")]
+#[command(
+    name = "ichtaca",
+    version,
+    about = "Pass-compatible password manager (TUI + CLI)"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Command>,
@@ -125,7 +129,11 @@ fn doctor() -> i32 {
     let mark = |ok: bool| if ok { "ok" } else { "missing" };
     println!("pass:  {}", mark(report.pass));
     println!("gpg:   {}", mark(report.gpg));
-    println!("store: {} ({})", mark(report.store), report.store_dir.display());
+    println!(
+        "store: {} ({})",
+        mark(report.store),
+        report.store_dir.display()
+    );
     if report.ok() {
         0
     } else {
@@ -147,7 +155,10 @@ mod tests {
         assert_eq!(exit_code(&PassError::EntryNotFound("a".into())), 1);
         assert_eq!(exit_code(&PassError::AlreadyExists("a".into())), 1);
         assert_eq!(
-            exit_code(&PassError::DecryptFailed { entry: "a".into(), message: "m".into() }),
+            exit_code(&PassError::DecryptFailed {
+                entry: "a".into(),
+                message: "m".into()
+            }),
             3
         );
         assert_eq!(exit_code(&PassError::GitError("g".into())), 3);

@@ -69,7 +69,12 @@ mod tests {
     use std::path::PathBuf;
 
     fn report(pass: bool, gpg: bool, store: bool) -> Report {
-        Report { pass, gpg, store, store_dir: PathBuf::from("/tmp/store") }
+        Report {
+            pass,
+            gpg,
+            store,
+            store_dir: PathBuf::from("/tmp/store"),
+        }
     }
 
     #[test]

@@ -22,7 +22,10 @@ impl FakeStore {
     /// `ICHTACA_DEMO=1` runtime mode; never guards real secrets.
     pub fn demo() -> Self {
         let mut store = Self::new();
-        store.seed("demo/example.com", "demo-password-not-real\nuser: you@example.com\n");
+        store.seed(
+            "demo/example.com",
+            "demo-password-not-real\nuser: you@example.com\n",
+        );
         store.seed("demo/github.com", "another-fake-password\nuser: octocat\n");
         store
     }
