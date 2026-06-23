@@ -59,6 +59,152 @@ Supported platforms: **macOS** and **Linux**.
 
 ---
 
+## Installation
+
+### macOS
+
+```sh
+# Homebrew prerequisites (if not already installed)
+brew install pass gnupg
+```
+
+Download the latest release from [GitHub Releases](https://github.com/chrnx-dev/ichtaca/releases/latest):
+- `ichtaca-macos-arm64.tar.gz` (Apple Silicon) or `ichtaca-macos-x86_64.tar.gz` (Intel) — TUI binary
+- `Ichtaca.dmg` — desktop app
+
+Or build from source (see [Building](#building) below).
+
+### Linux
+
+Install prerequisites via your distro's package manager, for example on Debian/Ubuntu:
+
+```sh
+sudo apt install pass gnupg2
+```
+
+Download the Linux release artifacts:
+- `ichtaca-linux-x86_64.tar.gz` — TUI binary
+- `ichtaca-desktop.deb` / `ichtaca-desktop.AppImage` — desktop app
+
+Or build from source.
+
+---
+
+## First-time setup
+
+If you do not have a password store yet, create one from scratch:
+
+```sh
+# 1. Generate a GPG key (choose RSA 4096 or Ed25519; remember the passphrase)
+gpg --full-generate-key
+
+# 2. Find your new key's ID
+gpg --list-secret-keys --keyid-format=long
+
+# 3. Initialise the store
+pass init <your-gpg-key-id>
+
+# 4. Verify everything is ready
+ichtaca doctor
+```
+
+`ichtaca doctor` exits 0 and prints `ok` for every check when the environment is ready. It exits 2 and prints guidance when something is missing.
+
+### Using an existing store
+
+If your store lives somewhere other than `~/.password-store`, point Ichtaca at it with the standard `pass` environment variable:
+
+```sh
+export PASSWORD_STORE_DIR=/path/to/your/store
+```
+
+Ichtaca respects `PASSWORD_STORE_DIR` exactly as `pass` does.
+
+---
+
+## Trying it without a store
+
+Set `ICHTACA_DEMO=1` to launch an explicit demo session seeded with obviously-fake entries — no `pass` or `gpg` required:
+
+```sh
+ICHTACA_DEMO=1 ichtaca          # TUI demo
+ICHTACA_DEMO=1 ichtaca-desktop  # Desktop demo
+```
+
+The TUI shows a `· DEMO` marker in the header; the desktop shows a `DEMO` badge in the navbar. Demo mode is **not your real data** and is not connected to any password store.
+
+---
+
+## CLI reference
+
+Running `ichtaca` with no arguments launches the interactive TUI. Running `ichtaca <subcommand>` runs non-interactively and exits.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `ichtaca doctor` | Check pass / gpg / store; exits 0 when ready, 2 when not |
+| `ichtaca list` | Print all entry paths, one per line |
+| `ichtaca search <query>` | Fuzzy-search entry paths |
+| `ichtaca get <path>` | Print the password to stdout (no trailing newline; pipe-safe) |
+| `ichtaca show <path> [--json]` | Print metadata only: path, fields, tags, `has_otp`. **Does not print the password or OTP URI.** |
+| `ichtaca otp <path>` | Print the current TOTP code |
+| `ichtaca copy <path>` | Copy the password to the clipboard; blocks until auto-cleared (Ctrl-C to keep) |
+| `ichtaca generate <path> [--length N] [--no-symbols]` | Generate and store a password; **refuses if the entry already exists** |
+| `ichtaca set <path> [--password-stdin] [--field key=value ...]` | Create or update an entry; preserves existing OTP, tags, and fields |
+
+#### `ichtaca show` JSON shape
+
+```json
+{"path":"web/example.com","fields":[["user","alice"]],"tags":["work"],"has_otp":true}
+```
+
+The password and raw OTP URI are intentionally excluded.
+
+#### `ichtaca set` — secrets via stdin, never argv
+
+Passwords are always read from stdin using `--password-stdin`. This keeps secrets out of shell history and process listings. Repeat `--field` for multiple fields.
+
+#### `ichtaca generate` defaults
+
+Default length is `32` characters. Override with `--length N`. Use `--no-symbols` for alphanumeric-only.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | User / input error (bad argument, entry not found, no OTP configured, etc.) |
+| `2` | Missing dependency or store (pass not installed, gpg not installed, store not initialised) |
+| `3` | Store / decrypt failure (GPG error, I/O error, git error) |
+
+### Examples
+
+```sh
+# Store a password (read from stdin)
+printf 'hunter2\n' | ichtaca set web/example.com --password-stdin --field user=me
+
+# Add fields to an existing entry without changing the password
+ichtaca set web/example.com --field url=https://example.com
+
+# Show metadata as JSON and pretty-print it
+ichtaca show web/example.com --json | jq .
+
+# Get the password and copy it yourself (macOS)
+ichtaca get web/example.com | pbcopy
+
+# Generate a 24-character alphanumeric password
+ichtaca generate dev/api-key --length 24 --no-symbols
+
+# Check the TOTP code for an entry
+ichtaca otp email/work
+
+# Copy to clipboard (auto-clears after the configured timeout)
+ichtaca copy email/work
+```
+
+---
+
 ## Building
 
 ### TUI (`ichtaca`)
@@ -211,6 +357,55 @@ crates/
   passcore/      — core library: store access, parsing, TOTP, clipboard, search, templates
   pass-tui/      — TUI frontend (tui-realm / ratatui)
   pass-tauri/    — desktop frontend (Tauri 2 + Svelte + Tailwind / DaisyUI)
+```
+
+---
+
+## Troubleshooting
+
+### GPG agent / pinentry issues
+
+- **"No pinentry program" / GPG prompt does not appear** — install a pinentry program: `brew install pinentry-mac` (macOS) or `sudo apt install pinentry-curses` (Linux), then configure it in `~/.gnupg/gpg-agent.conf`:
+  ```
+  pinentry-program /usr/local/bin/pinentry-mac
+  ```
+  Restart the agent: `gpgconf --kill gpg-agent`.
+
+- **"Inappropriate ioctl for device"** — this happens when GPG cannot access the terminal (e.g. inside a script or piped command). Export the current TTY before running:
+  ```sh
+  export GPG_TTY=$(tty)
+  ```
+  Add this to your shell profile (`~/.zshrc`, `~/.bashrc`) to make it permanent.
+
+- **Agent not running** — start it with `gpg-agent --daemon` or let GPG start it automatically on the next operation.
+
+### Missing clipboard backend
+
+- **macOS** — `pbcopy` is built in; no action needed.
+- **Linux (Wayland)** — install `wl-clipboard`: `sudo apt install wl-clipboard` (or distro equivalent). Ichtaca uses `wl-copy` / `wl-paste`.
+- **Linux (X11)** — install `xclip`: `sudo apt install xclip`. Ichtaca falls back to `xclip` when `wl-copy` is not found.
+
+If neither tool is available, `ichtaca copy` exits with an error asking you to install one.
+
+### macOS Gatekeeper ("unidentified developer" / "damaged app")
+
+The desktop release is **not yet code-signed or notarized**. macOS Gatekeeper will block it on first launch. To open it:
+
+- **Right-click** (or Control-click) the app → **Open** → **Open** (needed only once), **or**
+- remove the quarantine flag:
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/Ichtaca.app
+  ```
+
+Signing and notarization are planned for a future release. The TUI binary (`ichtaca`) is not affected — it runs from the terminal without Gatekeeper restrictions.
+
+### Using a non-default store location
+
+Set `PASSWORD_STORE_DIR` to point to your store:
+
+```sh
+export PASSWORD_STORE_DIR=/path/to/store
+ichtaca doctor   # confirm it is found
 ```
 
 ---
