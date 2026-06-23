@@ -1,14 +1,15 @@
 //! pass-tauri — Tauri 2 backend exposing passcore operations as commands.
 //!
-//! `run()` is called from `main.rs`. It builds the store (detects a real
-//! `PassCliStore`, falling back to `FakeStore` so the app still launches when
-//! `pass`/`gpg` are absent), wires up `AppState`, and registers every command.
+//! `run()` is called from `main.rs`. It attempts to build the store via
+//! `passcore::init_store`. On failure the app still launches but with no store
+//! and a recorded init error; commands refuse to operate and the frontend can
+//! call `doctor` to render a setup screen.
 
 pub mod commands;
 pub mod error;
 pub mod state;
 
-use passcore::{Config, FakeStore, PassCliStore, PasswordStore};
+use passcore::Config;
 use state::AppState;
 
 /// Entry point shared by the desktop binary (and, when enabled, mobile).
@@ -16,13 +17,21 @@ use state::AppState;
 pub fn run() {
     let config = Config::load().unwrap_or_default();
 
-    let store: Box<dyn PasswordStore + Send> = match PassCliStore::detect(config.store_dir.clone())
-    {
-        Ok(s) => Box::new(s),
-        Err(_) => Box::new(FakeStore::new()),
+    let app_state = match passcore::init_store(&config) {
+        Ok(init) => {
+            if init.demo {
+                AppState::new_demo(init.store, config)
+            } else {
+                AppState::new(init.store, config)
+            }
+        }
+        Err(e) => {
+            // Keep the app launchable; the frontend will show a setup screen
+            // (via the `doctor` command). Log to stderr for terminal debugging.
+            eprintln!("ichtaca-desktop: store unavailable: {e}");
+            AppState::uninitialized(e.to_string(), config)
+        }
     };
-
-    let app_state = AppState::new(store, config);
 
     tauri::Builder::default()
         .manage(app_state)
@@ -42,6 +51,7 @@ pub fn run() {
             commands::write::generate,
             commands::write::generate_password,
             commands::clipboard::copy_password,
+            commands::doctor::doctor,
         ])
         .run(tauri::generate_context!())
         .expect("error while running pass-tauri");

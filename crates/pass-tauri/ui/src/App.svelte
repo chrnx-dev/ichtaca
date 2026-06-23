@@ -6,9 +6,11 @@
   import Form from './components/Form.svelte';
   import ConfirmModal from './components/ConfirmModal.svelte';
   import SearchBar from './components/SearchBar.svelte';
-  import { list, showMeta, remove, buildTree } from './lib/api';
-  import type { EntryMeta, EntryNode } from './lib/types';
+  import SetupScreen from './components/SetupScreen.svelte';
+  import { doctor, list, showMeta, remove, buildTree } from './lib/api';
+  import type { DoctorReport, EntryMeta, EntryNode } from './lib/types';
 
+  let setup = $state<DoctorReport | null>(null);
   let tree = $state<EntryNode[]>([]);
   let selectedPath = $state<string | null>(null);
   let meta = $state<EntryMeta | null>(null);
@@ -116,20 +118,33 @@
 
   onMount(async () => {
     try {
+      setup = await doctor();
+      if (!setup.ok) {
+        return;
+      }
       allPaths = await list();
       tree = buildTree(allPaths);
     } catch (e) {
-      showError(
-        `Could not connect to the password store. ` +
-        `Make sure 'pass' and 'gpg' are installed and the store is initialised. ` +
-        `Error: ${e instanceof Error ? e.message : String(e)}`
-      );
+      setup = {
+        pass: false, gpg: false, store_dir_exists: false, store_dir: '',
+        ok: false, guidance: '',
+        demo: false,
+        init_error: `Could not run environment check: ${e instanceof Error ? e.message : String(e)}`,
+      };
     } finally {
       isLoading = false;
     }
   });
 </script>
 
+{#if setup === null}
+  <!-- Brief loading splash while doctor() resolves -->
+  <div class="flex items-center justify-center h-screen bg-[#15131A]">
+    <span class="loading loading-spinner loading-md text-primary"></span>
+  </div>
+{:else if !setup.ok}
+  <SetupScreen report={setup} />
+{:else}
 <div class="flex flex-col h-screen bg-[#15131A] text-base-content">
   <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
   <div class="navbar bg-base-100 border-b border-neutral/30 flex-shrink-0 min-h-12 px-3 gap-3">
@@ -137,6 +152,9 @@
     <div class="flex-shrink-0 flex items-baseline gap-1.5">
       <span class="text-primary font-bold tracking-widest text-sm uppercase">ICHTACA</span>
       <span class="text-neutral text-xs">· lo oculto</span>
+      {#if setup?.demo}
+        <span class="badge badge-warning badge-xs ml-1 uppercase font-bold">DEMO</span>
+      {/if}
     </div>
 
     <!-- Search -->
@@ -236,4 +254,5 @@
     onconfirm={handleDeleteConfirm}
     oncancel={() => { showDeleteModal = false; }}
   />
+{/if}
 {/if}

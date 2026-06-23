@@ -22,9 +22,13 @@ pub struct Header {
     inner: Paragraph,
 }
 
-impl Default for Header {
-    fn default() -> Self {
-        let brand_line = Line::from(vec![
+impl Header {
+    /// Build the header bar.
+    ///
+    /// When `demo` is `true` an extra `· DEMO` span is appended so users
+    /// cannot mistake the `ICHTACA_DEMO=1` fake store for real data.
+    pub fn new(demo: bool) -> Self {
+        let mut spans = vec![
             Span::styled(
                 format!("{} ICHTACA", icons::LOCK),
                 Style::default()
@@ -32,7 +36,18 @@ impl Default for Header {
                     .add_modifier(TextModifiers::BOLD),
             ),
             Span::styled("  ·  lo oculto", Style::default().fg(theme::MUTED)),
-        ]);
+        ];
+
+        if demo {
+            spans.push(Span::styled(
+                "  ·  DEMO",
+                Style::default()
+                    .fg(theme::GOLD_BRIGHT)
+                    .add_modifier(TextModifiers::BOLD),
+            ));
+        }
+
+        let brand_line = Line::from(spans);
 
         let inner = Paragraph::default()
             .background(theme::BG)
@@ -41,6 +56,12 @@ impl Default for Header {
             .text(vec![brand_line]);
 
         Self { inner }
+    }
+}
+
+impl Default for Header {
+    fn default() -> Self {
+        Self::new(false)
     }
 }
 

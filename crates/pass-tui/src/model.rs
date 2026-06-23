@@ -181,6 +181,9 @@ pub struct Model {
     pub redraw: bool,
     /// Password store backend.
     pub store: Box<dyn passcore::PasswordStore + Send>,
+    /// True when running the explicit `ICHTACA_DEMO=1` demo store. Drives the
+    /// visible DEMO marker so users never mistake the fake store for real data.
+    pub demo: bool,
     /// User configuration.
     pub config: passcore::Config,
 
@@ -229,7 +232,7 @@ impl Model {
     /// Call this once after `Application::init`.
     pub fn mount_phase1(&mut self) {
         self.app
-            .mount(Id::Header, Box::new(Header::default()), vec![])
+            .mount(Id::Header, Box::new(Header::new(self.demo)), vec![])
             .expect("mount Header");
 
         self.app
@@ -1908,6 +1911,7 @@ mod tests {
             quit: false,
             redraw: false,
             store: Box::new(store),
+            demo: false,
             config: passcore::Config::default(),
             selected_path: None,
             detail_entry: None,
@@ -3057,6 +3061,7 @@ mod tests {
             quit: false,
             redraw: false,
             store: Box::new(store),
+            demo: false,
             config: passcore::Config::default(),
             selected_path: None,
             detail_entry: None,

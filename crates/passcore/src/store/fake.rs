@@ -18,6 +18,18 @@ impl FakeStore {
         Self::default()
     }
 
+    /// A demo store seeded with obviously-fake entries. Used only by the explicit
+    /// `ICHTACA_DEMO=1` runtime mode; never guards real secrets.
+    pub fn demo() -> Self {
+        let mut store = Self::new();
+        store.seed(
+            "demo/example.com",
+            "demo-password-not-real\nuser: you@example.com\n",
+        );
+        store.seed("demo/github.com", "another-fake-password\nuser: octocat\n");
+        store
+    }
+
     /// Add or overwrite an entry with the given raw decrypted text.
     /// Convenience used by tests that don't need the trait's `insert`.
     pub fn seed(&mut self, path: &str, contents: &str) {

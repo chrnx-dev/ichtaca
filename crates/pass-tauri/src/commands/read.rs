@@ -22,12 +22,12 @@ pub struct OtpCode {
 // ── impl helpers (testable without a Tauri runtime) ──────────────────────────
 
 pub fn list_impl(state: &AppState) -> CommandResult<Vec<String>> {
-    let store = state.store();
+    let store = state.store()?;
     store.list().map_err(CommandError::from)
 }
 
 pub fn show_meta_impl(state: &AppState, path: String) -> CommandResult<EntryMeta> {
-    let store = state.store();
+    let store = state.store()?;
     let entry = store.show(&path).map_err(CommandError::from)?;
 
     // Key:value pairs, skipping line 0 (password), any `otpauth://` line, and
@@ -46,13 +46,13 @@ pub fn show_meta_impl(state: &AppState, path: String) -> CommandResult<EntryMeta
 }
 
 pub fn reveal_password_impl(state: &AppState, path: String) -> CommandResult<String> {
-    let store = state.store();
+    let store = state.store()?;
     let entry = store.show(&path).map_err(CommandError::from)?;
     Ok(entry.password().to_string())
 }
 
 pub fn otp_code_impl(state: &AppState, path: String) -> CommandResult<OtpCode> {
-    let store = state.store();
+    let store = state.store()?;
     let entry = store.show(&path).map_err(CommandError::from)?;
     let uri = entry.otp_uri().ok_or_else(|| CommandError {
         message: "no OTP URI configured for this entry".to_string(),
@@ -67,13 +67,13 @@ pub fn otp_code_impl(state: &AppState, path: String) -> CommandResult<OtpCode> {
 /// Reveal the raw `otpauth://` URI (contains the TOTP secret) — explicit,
 /// per-call, like reveal_password. Returns `None` if the entry has no OTP.
 pub fn reveal_otp_uri_impl(state: &AppState, path: &str) -> CommandResult<Option<String>> {
-    let store = state.store();
+    let store = state.store()?;
     let entry = store.show(path).map_err(CommandError::from)?;
     Ok(entry.otp_uri().map(|u| u.to_string()))
 }
 
 pub fn search_fuzzy_impl(state: &AppState, query: String) -> CommandResult<Vec<String>> {
-    let store = state.store();
+    let store = state.store()?;
     let paths = store.list().map_err(CommandError::from)?;
     let hits = passcore::fuzzy_paths(&query, &paths);
     Ok(hits.into_iter().map(|h| h.path).collect())
@@ -84,7 +84,7 @@ pub fn search_fuzzy_impl(state: &AppState, query: String) -> CommandResult<Vec<S
 /// Slower than `search_fuzzy` (GPG per entry) — user-initiated only. Only entry
 /// PATHS are returned; the matched plaintext is never exposed.
 pub fn search_deep_impl(state: &AppState, query: String) -> CommandResult<Vec<String>> {
-    let store = state.store();
+    let store = state.store()?;
     passcore::search::deep(&query, store.as_ref()).map_err(CommandError::from)
 }
 
@@ -275,6 +275,17 @@ mod tests {
         let state = state_with_github();
         let hits = search_fuzzy_impl(&state, String::new()).unwrap();
         assert!(!hits.is_empty());
+    }
+
+    #[test]
+    fn list_impl_uninitialized_returns_not_initialized_error() {
+        let state = AppState::uninitialized("pass not found".to_string(), Config::default());
+        let err = list_impl(&state).unwrap_err();
+        assert!(
+            err.message.contains("not initialized"),
+            "expected 'not initialized' in error message; got: {}",
+            err.message
+        );
     }
 
     #[test]

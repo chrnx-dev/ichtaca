@@ -12,7 +12,7 @@ pub fn copy_password_impl(state: &AppState, path: String) -> CommandResult<()> {
     // Fetch the raw secret first — this must succeed even when no clipboard
     // is available, and is what we test on headless CI.
     let password = {
-        let store = state.store();
+        let store = state.store()?;
         let secret = store.show_raw(&path).map_err(CommandError::from)?;
         // Copy only the first line (the password), not the whole entry.
         // `secret` is zeroized when it drops at the end of this block.

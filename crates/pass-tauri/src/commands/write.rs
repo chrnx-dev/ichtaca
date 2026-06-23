@@ -85,7 +85,7 @@ pub fn insert_impl(
     input: EntryInput,
     overwrite: bool,
 ) -> CommandResult<()> {
-    let mut store = state.store();
+    let mut store = state.store()?;
     let text = build_entry_text(&input);
     let secret = Secret::from(text.as_str());
     store
@@ -94,7 +94,7 @@ pub fn insert_impl(
 }
 
 pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> CommandResult<()> {
-    let mut store = state.store();
+    let mut store = state.store()?;
     // Load existing entry, apply structured changes (preserves unknown lines).
     let mut entry = store.show(&path).map_err(CommandError::from)?;
 
@@ -134,17 +134,17 @@ pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> 
 }
 
 pub fn remove_impl(state: &AppState, path: String) -> CommandResult<()> {
-    let mut store = state.store();
+    let mut store = state.store()?;
     store.remove(&path).map_err(CommandError::from)
 }
 
 pub fn mv_impl(state: &AppState, from: String, to: String) -> CommandResult<()> {
-    let mut store = state.store();
+    let mut store = state.store()?;
     store.mv(&from, &to).map_err(CommandError::from)
 }
 
 pub fn cp_impl(state: &AppState, from: String, to: String) -> CommandResult<()> {
-    let mut store = state.store();
+    let mut store = state.store()?;
     store.cp(&from, &to).map_err(CommandError::from)
 }
 
@@ -154,7 +154,7 @@ pub fn generate_impl(
     len: usize,
     symbols: bool,
 ) -> CommandResult<()> {
-    let mut store = state.store();
+    let mut store = state.store()?;
     store
         .generate(&path, len, symbols)
         .map(|_| ())
@@ -262,7 +262,7 @@ mod tests {
         let state = make_state();
         let input = make_entry_input("secret", vec![("user", "bob")], vec![]);
         insert_impl(&state, "web/x".to_string(), input, false).unwrap();
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/x").unwrap();
         assert_eq!(entry.password(), "secret");
         assert_eq!(entry.field("user"), Some("bob"));
@@ -292,7 +292,7 @@ mod tests {
             tags: vec!["work".to_string(), "personal".to_string()],
         };
         insert_impl(&state, "new/entry".to_string(), input, false).unwrap();
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("new/entry").unwrap();
         assert!(entry.otp_uri().is_some());
         assert!(entry.tags().contains(&"work".to_string()));
@@ -310,7 +310,7 @@ mod tests {
         let input = make_update_input("newpw", vec![("user", "alice")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("alice"));
@@ -333,7 +333,7 @@ mod tests {
         let input = make_update_input("newpw", vec![("user", "alice")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("alice"));
@@ -359,7 +359,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(
             entry.otp_uri(),
@@ -386,7 +386,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert!(
             entry.otp_uri().is_none(),
@@ -415,7 +415,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         let tags = entry.tags();
         assert!(
@@ -441,7 +441,7 @@ mod tests {
         let input = make_update_input("newpw", vec![("user", "carol"), ("url", "a.com")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.password(), "newpw");
         assert_eq!(entry.field("user"), Some("carol"));
@@ -463,7 +463,7 @@ mod tests {
         let input = make_update_input("pw", vec![("user", "alice")]);
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.field("user"), Some("alice"), "user should be updated");
         assert_eq!(entry.field("url"), None, "url should have been deleted");
@@ -491,7 +491,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(entry.field("user"), None, "user should have been deleted");
         assert!(
@@ -518,7 +518,7 @@ mod tests {
         };
         update_entry_impl(&state, "web/site".to_string(), input).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/site").unwrap();
         assert_eq!(
             entry.field("user"),
@@ -547,7 +547,7 @@ mod tests {
 
         remove_impl(&state, "web/x".to_string()).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         assert!(store.show("web/x").is_err());
     }
 
@@ -555,6 +555,20 @@ mod tests {
     fn remove_missing_entry_returns_err() {
         let state = make_state();
         assert!(remove_impl(&state, "no/such".to_string()).is_err());
+    }
+
+    #[test]
+    fn insert_impl_uninitialized_returns_not_initialized_error() {
+        // Mirror of the read-side test: a write against an uninitialized state
+        // must refuse with the not-initialized error, never silently succeed.
+        let state = AppState::uninitialized("pass not found".to_string(), Config::default());
+        let input = make_entry_input("secret", vec![], vec![]);
+        let err = insert_impl(&state, "web/x".to_string(), input, false).unwrap_err();
+        assert!(
+            err.message.contains("not initialized"),
+            "expected 'not initialized' in error message; got: {}",
+            err.message
+        );
     }
 
     // ── mv ────────────────────────────────────────────────────────────────────
@@ -567,7 +581,7 @@ mod tests {
 
         mv_impl(&state, "web/old".to_string(), "web/new".to_string()).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         assert!(store.show("web/old").is_err());
         assert_eq!(store.show("web/new").unwrap().password(), "pw");
     }
@@ -582,7 +596,7 @@ mod tests {
 
         cp_impl(&state, "web/src".to_string(), "web/dst".to_string()).unwrap();
 
-        let store = state.store();
+        let store = state.store().unwrap();
         assert_eq!(store.show("web/src").unwrap().password(), "pw");
         assert_eq!(store.show("web/dst").unwrap().password(), "pw");
     }
@@ -600,7 +614,7 @@ mod tests {
             tags: vec!["@work".to_string(), "home".to_string()],
         };
         insert_impl(&state, "web/tagged".to_string(), input, false).unwrap();
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("web/tagged").unwrap();
         let text = entry.serialize();
         assert!(
@@ -624,7 +638,7 @@ mod tests {
     fn generate_writes_entry_of_requested_length() {
         let state = make_state();
         generate_impl(&state, "new/gen".to_string(), 20, false).unwrap();
-        let store = state.store();
+        let store = state.store().unwrap();
         let entry = store.show("new/gen").unwrap();
         assert_eq!(
             entry.password().chars().count(),
@@ -637,7 +651,7 @@ mod tests {
     fn generate_with_symbols_succeeds() {
         let state = make_state();
         generate_impl(&state, "new/sym".to_string(), 16, true).unwrap();
-        let store = state.store();
+        let store = state.store().unwrap();
         assert_eq!(
             store.show("new/sym").unwrap().password().chars().count(),
             16

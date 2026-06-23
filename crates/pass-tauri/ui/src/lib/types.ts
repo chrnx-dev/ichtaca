@@ -47,3 +47,15 @@ export interface UpdateInput {
   otp: string | null;
   tags: string[];
 }
+
+/** Environment diagnostics — mirrors `DoctorReport` Rust struct. */
+export interface DoctorReport {
+  pass: boolean;
+  gpg: boolean;
+  store_dir_exists: boolean;
+  store_dir: string;
+  ok: boolean;
+  guidance: string;
+  demo: boolean;
+  init_error: string | null;
+}

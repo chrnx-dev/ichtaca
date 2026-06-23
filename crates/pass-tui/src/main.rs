@@ -3,6 +3,7 @@
 //! Phase 3: search modal, create/edit form modal, delete confirm, raw edit,
 //! and tree refresh after writes — on top of the Phase-2 browse stack.
 
+mod cli;
 mod components;
 mod domain;
 mod id;
@@ -24,8 +25,13 @@ use model::{FormState, Model, Overlay};
 use msg::Msg;
 
 fn main() {
+    use clap::Parser;
+    let cli = cli::Cli::parse();
+    if let Some(cmd) = cli.cmd {
+        std::process::exit(cli::dispatch(cmd));
+    }
     if let Err(e) = run() {
-        eprintln!("pass-tui: {e}");
+        eprintln!("ichtaca: {e}");
         std::process::exit(1);
     }
 }
@@ -34,12 +40,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Load config; fall back to defaults on error.
     let config = passcore::Config::load().unwrap_or_default();
 
-    // Build the password store; fall back to a fake store on failure.
-    let store: Box<dyn passcore::PasswordStore + Send> =
-        match passcore::PassCliStore::detect(config.store_dir.clone()) {
-            Ok(s) => Box::new(s),
-            Err(_) => Box::new(passcore::FakeStore::new()),
-        };
+    // Initialise the store; exit with actionable guidance on failure.
+    let init = match passcore::init_store(&config) {
+        Ok(init) => init,
+        Err(e) => {
+            let report = passcore::doctor::run(config.store_dir.clone());
+            let guidance = passcore::doctor::guidance(&report);
+            if guidance.is_empty() {
+                // Failure the doctor can't explain (e.g. permission denied) —
+                // surface the real error instead of a blank screen.
+                eprintln!("ichtaca: {e}");
+            } else {
+                eprint!("{guidance}");
+            }
+            std::process::exit(cli::exit_code(&e));
+        }
+    };
 
     // Initialise the terminal (crossterm).
     // CrosstermTerminalAdapter::new() installs the panic hook automatically,
@@ -61,7 +77,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         app,
         quit: false,
         redraw: true,
-        store,
+        store: init.store,
+        demo: init.demo,
         config,
         selected_path: None,
         detail_entry: None,
