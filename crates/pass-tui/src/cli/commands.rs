@@ -14,9 +14,12 @@ pub fn run(cmd: Command) -> CliResult {
         Command::Get { path } => get(&config, &path),
         Command::Show { path, json } => show(&config, &path, json),
         Command::Otp { path } => otp(&config, &path),
-        // Write commands land in Task 11.
-        Command::Copy { .. } | Command::Generate { .. } | Command::Set { .. } => {
-            Err(CliError::Usage("this command is not yet implemented".into()))
+        Command::Copy { path } => copy(&config, &path),
+        Command::Generate { path, length, no_symbols } => {
+            generate(&config, &path, length, no_symbols)
+        }
+        Command::Set { path, password_stdin, fields } => {
+            set(&config, &path, password_stdin, &fields)
         }
         Command::Doctor => unreachable!("Doctor is handled in dispatch"),
     }
@@ -59,6 +62,119 @@ fn otp(config: &passcore::Config, path: &str) -> CliResult {
             Ok(())
         }
     }
+}
+
+fn copy(config: &passcore::Config, path: &str) -> CliResult {
+    let init = passcore::init_store(config)?;
+    let entry = init.store.show(path)?;
+    let secret = passcore::Secret::from(entry.password());
+    let backend = passcore::clipboard::default_backend()?;
+    passcore::clipboard::copy_with(backend.as_ref(), &secret)?;
+    let secs = config.clipboard.clear_after;
+    if secs == 0 {
+        println!("Copied {path} to clipboard.");
+    } else {
+        println!("Copied {path} to clipboard. Clearing in {secs}s (Ctrl-C to keep it).");
+        std::thread::sleep(std::time::Duration::from_secs(secs));
+        passcore::clipboard::clear_if_owned(backend.as_ref(), secret.expose_str())?;
+    }
+    Ok(())
+}
+
+fn generate(
+    config: &passcore::Config,
+    path: &str,
+    length: usize,
+    no_symbols: bool,
+) -> CliResult {
+    let mut init = passcore::init_store(config)?;
+    if init.store.list()?.iter().any(|p| p == path) {
+        return Err(CliError::Usage(format!(
+            "entry already exists: {path} (refusing to overwrite)"
+        )));
+    }
+    let secret = init.store.generate(path, length, !no_symbols)?;
+    print!("{}", secret.expose_str());
+    Ok(())
+}
+
+fn set(
+    config: &passcore::Config,
+    path: &str,
+    password_stdin: bool,
+    fields: &[String],
+) -> CliResult {
+    if !password_stdin && fields.is_empty() {
+        return Err(CliError::Usage(
+            "nothing to set: pass --password-stdin and/or --field key=value".into(),
+        ));
+    }
+    let parsed: Vec<(String, String)> = fields
+        .iter()
+        .map(|f| parse_field(f))
+        .collect::<Result<_, _>>()?;
+
+    let mut init = passcore::init_store(config)?;
+    // Read-modify-write: start from the existing entry if present, else a blank one.
+    // This preserves any existing OTP, tags, and other fields.
+    let mut entry = match init.store.show(path) {
+        Ok(e) => e,
+        Err(passcore::PassError::EntryNotFound(_)) => passcore::Entry::parse(""),
+        Err(e) => return Err(e.into()),
+    };
+    let pw = if password_stdin {
+        Some(read_stdin_trimmed()?)
+    } else {
+        None
+    };
+    apply_set(&mut entry, pw.as_deref(), &parsed);
+    init.store
+        .insert(path, &passcore::Secret::from(entry.serialize()), true)?;
+    Ok(())
+}
+
+/// Apply password and field updates to an entry. Extracted for unit testing.
+fn apply_set(entry: &mut passcore::Entry, password: Option<&str>, fields: &[(String, String)]) {
+    if let Some(pw) = password {
+        entry.set_password(pw);
+    }
+    for (k, v) in fields {
+        entry.set_field(k, v);
+    }
+}
+
+/// Parse a `key=value` field argument. The split occurs on the FIRST `=` only,
+/// so `k=v=w` yields `("k", "v=w")`. Empty key or missing `=` is an error.
+fn parse_field(s: &str) -> Result<(String, String), CliError> {
+    match s.split_once('=') {
+        Some(("", _)) => Err(CliError::Usage(format!(
+            "invalid --field {s:?}, expected key=value"
+        ))),
+        Some((k, v)) => Ok((k.to_string(), v.to_string())),
+        None => Err(CliError::Usage(format!(
+            "invalid --field {s:?}, expected key=value"
+        ))),
+    }
+}
+
+/// Strip exactly one trailing `\n` (and a preceding `\r` if present).
+/// `"pw\n"` → `"pw"`, `"pw\r\n"` → `"pw"`, `"pw"` → `"pw"`, `"a\nb\n"` → `"a\nb"`.
+fn strip_one_trailing_newline(s: String) -> String {
+    if let Some(stripped) = s.strip_suffix('\n') {
+        stripped.strip_suffix('\r').unwrap_or(stripped).to_string()
+    } else {
+        s
+    }
+}
+
+/// Read all of stdin, strip exactly one trailing newline.
+fn read_stdin_trimmed() -> Result<String, CliError> {
+    use std::io::Read;
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buf)
+        .map_err(|e| CliError::Pass(passcore::PassError::Io(e)))?;
+    Ok(strip_one_trailing_newline(buf))
 }
 
 fn show(config: &passcore::Config, path: &str, json: bool) -> CliResult {
@@ -113,6 +229,87 @@ pub(crate) fn show_plain(entry: &passcore::Entry, path: &str) -> String {
 mod tests {
     use super::*;
     use passcore::Entry;
+
+    // ── parse_field ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_field_simple() {
+        assert_eq!(
+            parse_field("user=me").ok(),
+            Some(("user".to_string(), "me".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_field_no_equals_is_err() {
+        assert!(parse_field("bad").is_err());
+    }
+
+    #[test]
+    fn parse_field_empty_key_is_err() {
+        assert!(parse_field("=v").is_err());
+    }
+
+    #[test]
+    fn parse_field_value_with_equals_splits_on_first() {
+        assert_eq!(
+            parse_field("k=v=w").ok(),
+            Some(("k".to_string(), "v=w".to_string()))
+        );
+    }
+
+    // ── strip_one_trailing_newline ────────────────────────────────────────────
+
+    #[test]
+    fn strip_trailing_newline_lf() {
+        assert_eq!(strip_one_trailing_newline("pw\n".into()), "pw");
+    }
+
+    #[test]
+    fn strip_trailing_newline_crlf() {
+        assert_eq!(strip_one_trailing_newline("pw\r\n".into()), "pw");
+    }
+
+    #[test]
+    fn strip_trailing_newline_none() {
+        assert_eq!(strip_one_trailing_newline("pw".into()), "pw");
+    }
+
+    #[test]
+    fn strip_trailing_newline_multiline_strips_only_last() {
+        assert_eq!(strip_one_trailing_newline("a\nb\n".into()), "a\nb");
+    }
+
+    // ── apply_set ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn apply_set_preserves_otp_and_tags() {
+        let mut entry =
+            Entry::parse("oldpass\nuser: alice\notpauth://totp/x?secret=ABC\n@work\n");
+        let fields = vec![("email".to_string(), "a@b.com".to_string())];
+        apply_set(&mut entry, Some("newpass"), &fields);
+
+        assert_eq!(entry.password(), "newpass", "password updated");
+        assert_eq!(
+            entry.field("email"),
+            Some("a@b.com"),
+            "new field present"
+        );
+        assert_eq!(entry.field("user"), Some("alice"), "existing field intact");
+        assert!(entry.otp_uri().is_some(), "OTP URI must be preserved");
+        assert!(
+            entry.tags().iter().any(|t| t == "work"),
+            "work tag must be preserved"
+        );
+    }
+
+    #[test]
+    fn apply_set_no_password_preserves_existing() {
+        let mut entry = Entry::parse("existing\nuser: bob\n");
+        apply_set(&mut entry, None, &[("url".to_string(), "x.com".to_string())]);
+        assert_eq!(entry.password(), "existing", "password unchanged");
+        assert_eq!(entry.field("url"), Some("x.com"));
+    }
 
     /// Entry with password, a user field, an otp URI, and a @work tag.
     fn entry_full() -> Entry {
