@@ -4,9 +4,29 @@
 
 <h1 align="center">Ichtaca</h1>
 
-<p align="center"><strong>lo oculto</strong> — a <code>pass</code> client for the terminal and desktop</p>
+<p align="center"><strong>Your passwords. Local. Yours.</strong></p>
 
-**Ichtaca** (Classical Nahuatl: *"the hidden / the secret"*; pronounced *ich-TA-ka*) is a front-end for [`pass`](https://www.passwordstore.org/), the standard Unix password manager. It does **not** replace `pass` — it wraps the `pass` CLI and `gpg`/`gpg-agent`, giving you a richer interface over your existing `~/.password-store`.
+<p align="center">
+  A free, open-source password manager for your <strong>terminal</strong>, <strong>desktop</strong>, and <strong>scripts</strong> —<br>
+  a richer interface over the trusted <a href="https://www.passwordstore.org/"><code>pass</code></a> + <code>gpg</code>. No cloud. No telemetry. No account.
+</p>
+
+<p align="center">
+  <a href="https://github.com/chrnx-dev/ichtaca/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-E0A436" alt="MIT License"></a>
+  <a href="https://github.com/chrnx-dev/ichtaca/releases/latest"><img src="https://img.shields.io/github/v/release/chrnx-dev/ichtaca?include_prereleases&color=E0A436" alt="Latest release"></a>
+  <a href="https://github.com/chrnx-dev/ichtaca/actions/workflows/ci.yml"><img src="https://github.com/chrnx-dev/ichtaca/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-2A2533" alt="macOS and Linux">
+  <img src="https://img.shields.io/badge/telemetry-none-3FA66A" alt="No telemetry">
+</p>
+
+<p align="center">
+  <a href="#installation"><strong>Install</strong></a> ·
+  <a href="#cli-reference">CLI</a> ·
+  <a href="#security-model">Security</a> ·
+  <a href="https://chrnx-dev.github.io/ichtaca/">Website</a>
+</p>
+
+<p align="center"><sub><em>Ichtaca</em> — Classical Nahuatl for <em>"the hidden / the secret"</em>, pronounced <em>ich-TA-ka</em>.</sub></p>
 
 ---
 
@@ -22,16 +42,29 @@
 
 ---
 
-## What is this?
+## Why Ichtaca
 
-Ichtaca provides two apps that share a single Rust core library (`passcore`):
+- **Local-first — no cloud, ever.** Your secrets live in your own `~/.password-store`, encrypted with your GPG key. Nothing is uploaded, synced to a vendor, or locked behind an account.
+- **You own the keys.** Encryption and decryption are delegated entirely to `gpg`/`gpg-agent`. Ichtaca invents no new format and never writes plaintext to disk.
+- **No telemetry, no network.** No analytics, no phone-home — only `git`, and only if *your* store uses it.
+- **Zero migration.** It wraps the standard Unix [`pass`](https://www.passwordstore.org/): point it at your existing store and it just works. Keep using `pass` side by side.
+- **Open source (MIT).** Audit every line.
 
-| App | Binary | Description |
-|-----|--------|-------------|
-| **Ichtaca TUI** | `ichtaca` | Full-featured terminal UI (keyboard-driven) |
-| **Ichtaca Desktop** | `ichtaca-desktop` | Native desktop GUI (Tauri + Svelte) |
+> Ichtaca does **not** replace `pass` — it gives you a far richer interface over the same `~/.password-store`.
 
-Both apps read and write the same `~/.password-store` directory that `pass` manages — no data migration needed.
+---
+
+## Three ways, one store
+
+Two apps and a CLI share a single Rust core (`passcore`) and the same `~/.password-store` — no migration, no new format:
+
+| | Binary | Best for |
+|---|--------|----------|
+| **Terminal TUI** | `ichtaca` | Keyboard-driven browse, search & edit without leaving the shell |
+| **Desktop GUI** | `ichtaca-desktop` | A native window (Tauri + Svelte) for point-and-click |
+| **Scriptable CLI** | `ichtaca <subcommand>` | Automation & pipelines — `get`, `set`, `otp`, `generate`, `doctor`… |
+
+> **Try it with no store and no setup:** `ICHTACA_DEMO=1 ichtaca` launches a labeled demo with fake data. See [Trying it without a store](#trying-it-without-a-store).
 
 ### Requirements
 
@@ -47,14 +80,14 @@ Supported platforms: **macOS** and **Linux**.
 
 ## Features
 
-- **Tree browser** — navigate your store directory tree with keyboard or mouse
-- **Entry detail panel** — view fields parsed from the `pass` format (password, username, URL, notes, custom fields)
-- **Password masked by default** — reveal on explicit action (`s` / Reveal button)
-- **Copy to clipboard** — copies the password via `pass`; clipboard is auto-cleared after 45 seconds (configurable) and only if the clipboard still holds the copied value
-- **TOTP / OTP codes** — generate and copy one-time passwords from `otpauth://` URIs stored in entries
-- **Create / edit / delete entries** — form-based with user-defined templates; or raw `$EDITOR` edit
-- **Password generator** — CSPRNG-backed; configurable length and character set
-- **Fuzzy search** — live search across all entry paths, plus an on-demand content search (`Ctrl-f`) that decrypts entries to match inside bodies and tags
+- **Tree browser** — navigate your store with vim keys (`hjkl`) or arrows; fields parsed straight from the `pass` format (password, user, URL, notes, custom fields)
+- **Masked by default** — passwords reveal only on an explicit action; never on screen by accident
+- **Live TOTP** — generate and copy one-time codes from `otpauth://` URIs stored in your entries
+- **Copy & auto-clear** — clipboard clears after 45s (configurable), and only if the value is still the one you copied
+- **Create / edit / delete** — form-based with templates, custom fields & tags — or drop to a raw `$EDITOR`
+- **CSPRNG generator** — cryptographically secure passwords, configurable length and charset
+- **Fuzzy + content search** — instant path search, plus on-demand body/tag search (`Ctrl-f`) that decrypts to match
+- **Scriptable CLI** — pipe-safe output, stable `--json`, stable exit codes for automation
 - **`git` passthrough** — if your store is a git repo, `pass` manages commits as usual
 
 ---
