@@ -120,7 +120,6 @@
     try {
       setup = await doctor();
       if (!setup.ok) {
-        isLoading = false;
         return;
       }
       allPaths = await list();
@@ -137,7 +136,12 @@
   });
 </script>
 
-{#if setup && !setup.ok}
+{#if setup === null}
+  <!-- Brief loading splash while doctor() resolves -->
+  <div class="flex items-center justify-center h-screen bg-[#15131A]">
+    <span class="loading loading-spinner loading-md text-primary"></span>
+  </div>
+{:else if !setup.ok}
   <SetupScreen report={setup} />
 {:else}
 <div class="flex flex-col h-screen bg-[#15131A] text-base-content">
