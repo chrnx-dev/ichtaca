@@ -9,7 +9,10 @@ use crate::state::AppState;
 pub struct DoctorReport {
     pub pass: bool,
     pub gpg: bool,
-    pub store: bool,
+    /// Whether the store directory exists on disk. Distinct from whether
+    /// `AppState` holds a live store (see `init_error`): the directory can be
+    /// present while the runtime store failed to initialize, and vice versa.
+    pub store_dir_exists: bool,
     pub store_dir: String,
     pub ok: bool,
     pub guidance: String,
@@ -25,7 +28,7 @@ pub fn doctor_impl(state: &AppState) -> DoctorReport {
     DoctorReport {
         pass: report.pass,
         gpg: report.gpg,
-        store: report.store,
+        store_dir_exists: report.store,
         store_dir: report.store_dir.to_string_lossy().into_owned(),
         ok: report.ok(),
         guidance,

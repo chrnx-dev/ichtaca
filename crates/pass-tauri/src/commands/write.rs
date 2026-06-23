@@ -557,6 +557,20 @@ mod tests {
         assert!(remove_impl(&state, "no/such".to_string()).is_err());
     }
 
+    #[test]
+    fn insert_impl_uninitialized_returns_not_initialized_error() {
+        // Mirror of the read-side test: a write against an uninitialized state
+        // must refuse with the not-initialized error, never silently succeed.
+        let state = AppState::uninitialized("pass not found".to_string(), Config::default());
+        let input = make_entry_input("secret", vec![], vec![]);
+        let err = insert_impl(&state, "web/x".to_string(), input, false).unwrap_err();
+        assert!(
+            err.message.contains("not initialized"),
+            "expected 'not initialized' in error message; got: {}",
+            err.message
+        );
+    }
+
     // ── mv ────────────────────────────────────────────────────────────────────
 
     #[test]

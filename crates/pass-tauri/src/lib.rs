@@ -26,7 +26,9 @@ pub fn run() {
             }
         }
         Err(e) => {
-            // Keep the app launchable; the frontend will show a setup screen.
+            // Keep the app launchable; the frontend will show a setup screen
+            // (via the `doctor` command). Log to stderr for terminal debugging.
+            eprintln!("ichtaca-desktop: store unavailable: {e}");
             AppState::uninitialized(e.to_string(), config)
         }
     };
