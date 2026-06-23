@@ -16,3 +16,11 @@ impl From<passcore::PassError> for CommandError {
 }
 
 pub type CommandResult<T> = std::result::Result<T, CommandError>;
+
+/// Convenience constructor for the "store not initialized" error returned when
+/// the runtime store was never built (missing `pass`, `gpg`, or store dir).
+pub fn not_initialized() -> CommandError {
+    CommandError {
+        message: "password store not initialized".to_string(),
+    }
+}
