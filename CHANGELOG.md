@@ -4,7 +4,7 @@ All notable changes to **Ichtaca** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses CalVer
 (`YY.MM.PATCH`).
 
-## [Unreleased] — beta slice
+## [26.6.0-beta.1] - 2026-06-23
 
 ### Added
 
@@ -27,7 +27,7 @@ All notable changes to **Ichtaca** are documented here. The format is based on
   - `ichtaca otp <path>` — print the current TOTP code.
   - `ichtaca copy <path>` — copy the password to clipboard, then clear it after the configured `clear_after` timeout (blocks until cleared; Ctrl-C to keep). If `clear_after` is 0, copies and returns immediately without clearing.
   - `ichtaca generate <path> [--length N] [--no-symbols]` — generate and store a password; refuses if the entry already exists (default length 32).
-  - `ichtaca set <path> [--password-stdin] [--field key=value ...]` — create/update an entry; reads password from stdin only; read-modify-write preserves existing OTP, tags, and fields.
+  - `ichtaca set <path> [--password-stdin] [--field key=value ...] [--tag T ...] [--remove-field K ...] [--remove-tag T ...]` — create/update an entry; reads password from stdin only; read-modify-write preserves existing OTP, tags, and fields. Add tags with `--tag`; remove fields or tags with `--remove-field` / `--remove-tag`.
 - **Stable exit codes:** `0` success · `1` user/input error · `2` missing dependency or
   store · `3` store/decrypt failure.
 
@@ -113,7 +113,7 @@ First public alpha. Expect rough edges.
 - All GPG/pinentry/key handling is delegated to `gpg`/`gpg-agent`.
 - No telemetry and no network access (other than `git` if your store uses it).
 
-[Unreleased]: https://github.com/chrnx-dev/ichtaca/compare/v26.6.0-alpha.2...HEAD
+[26.6.0-beta.1]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-beta.1
 [26.6.0-alpha.2]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha.2
 [26.6.0-alpha.1]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha.1
 [26.6.0-alpha]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha

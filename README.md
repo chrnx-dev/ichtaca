@@ -243,9 +243,9 @@ cargo tauri build
 
 Tauri only bundles for the **host OS**: `app`/`dmg` on macOS, `deb`/`appimage` on Linux.
 
-#### Opening the macOS app (alpha is unsigned)
+#### Opening the macOS app (unsigned)
 
-The alpha `.dmg`/`.app` is **not code-signed or notarized** yet, so macOS Gatekeeper
+The macOS `.dmg`/`.app` is **not code-signed or notarized** yet, so macOS Gatekeeper
 will block it on first launch ("unidentified developer" / "damaged"). To open it:
 
 - **Right-click** (or Control-click) the app → **Open** → **Open** (only needed once), **or**
@@ -259,7 +259,7 @@ the release workflow signs automatically once the Apple secrets are configured.
 
 #### Releases & artifacts
 
-Pushing a tag like `v26.6.0-alpha` triggers `.github/workflows/release.yml`, which
+Pushing a tag like `v26.6.0-beta.1` triggers `.github/workflows/release.yml`, which
 builds the desktop bundles (macOS `.dmg`, Linux `.deb`/`.AppImage`) and the TUI
 binary tarballs for macOS (arm64 + Intel) and Linux, and attaches them to a draft
 GitHub Release.
@@ -418,7 +418,7 @@ ichtaca doctor   # confirm it is found
 
 ## Status
 
-**Alpha** — `26.6.0-alpha.2` (CalVer YY.MM.PATCH). The core features work, but expect rough edges, missing documentation, and breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
+**Beta** — `26.6.0-beta.1` (CalVer YY.MM.PATCH). The core read/write features are stable across the TUI, desktop, and CLI. Known rough edges: the macOS build is unsigned, and OTP has no structured editor yet. Expect possible breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
 
 ---
 
