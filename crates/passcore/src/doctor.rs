@@ -52,10 +52,7 @@ pub fn guidance(report: &Report) -> String {
         "Ichtaca could not open your password store.\n\n\
          Missing: {}\n\
          Expected store: {}\n\n\
-         Install and initialize:\n\n\
-         \x20\x20brew install pass gnupg\n\
-         \x20\x20gpg --full-generate-key\n\
-         \x20\x20pass init <your-gpg-key-id>\n",
+         Install and initialize:\n\n  brew install pass gnupg\n  gpg --full-generate-key\n  pass init <your-gpg-key-id>\n",
         missing.join(", "),
         report.store_dir.display(),
     )
@@ -75,12 +72,17 @@ mod tests {
         assert!(report(true, true, true).ok());
         assert!(!report(false, true, true).ok());
         assert!(!report(true, true, false).ok());
+        assert!(!report(false, false, false).ok());
     }
 
     #[test]
     fn guidance_names_missing_pieces() {
         let g = guidance(&report(false, true, false));
-        assert!(g.contains("pass"));
+        assert!(g.contains("pass command"));
+        // gpg is present in the fixture, so it must not be named as missing.
+        // (The static "pass init <your-gpg-key-id>" line legitimately mentions
+        // gpg, so we assert against the missing-piece label, not the substring.)
+        assert!(!g.contains("gpg command"));
         assert!(g.contains("/tmp/store"));
         assert!(g.contains("pass init"));
     }
