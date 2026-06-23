@@ -37,10 +37,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Initialise the store; exit with actionable guidance on failure.
     let init = match passcore::init_store(&config) {
         Ok(init) => init,
-        Err(_) => {
+        Err(e) => {
             let report = passcore::doctor::run(config.store_dir.clone());
-            eprint!("{}", passcore::doctor::guidance(&report));
-            return Err("password store unavailable".into());
+            let guidance = passcore::doctor::guidance(&report);
+            if guidance.is_empty() {
+                // Failure the doctor can't explain (e.g. permission denied) —
+                // surface the real error instead of a blank screen.
+                eprintln!("ichtaca: {e}");
+            } else {
+                eprint!("{guidance}");
+            }
+            std::process::exit(1);
         }
     };
 
