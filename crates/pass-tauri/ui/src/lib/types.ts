@@ -74,3 +74,11 @@ export interface GitStatus {
 
 /** A network git operation — mirrors `passcore::git::Op`. */
 export type GitOp = 'pull' | 'push';
+
+/** What the backend made of an OTP input — mirrors `OtpPreview` Rust struct. */
+export interface OtpPreview {
+  /** Canonical `otpauth://` URI, or null when the input is blank. */
+  uri: string | null;
+  /** Human summary, e.g. `GitHub (alice) · 6 digits · 30s · SHA1`. */
+  summary: string | null;
+}

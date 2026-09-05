@@ -7,7 +7,7 @@
  * `vi.mock('@tauri-apps/api/core')`.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { DoctorReport, EntryInput, EntryMeta, EntryNode, GitOp, GitStatus, OtpCode, UpdateInput } from './types';
+import type { DoctorReport, EntryInput, EntryMeta, EntryNode, GitOp, GitStatus, OtpCode, OtpPreview, UpdateInput } from './types';
 
 // ── Command wrappers ──────────────────────────────────────────────────────────
 
@@ -178,4 +178,17 @@ export function gitStatus(): Promise<GitStatus | null> {
  */
 export function gitSync(op: GitOp): Promise<string> {
   return invoke('git_sync', { op });
+}
+
+/**
+ * Ask the backend what it makes of an OTP input — a full `otpauth://` URI or a
+ * bare base32 secret. Rejects with a message the form can show. The write
+ * commands validate again, so this is feedback, not the gate.
+ */
+export function otpPreview(
+  input: string,
+  path: string,
+  fields: [string, string][],
+): Promise<OtpPreview> {
+  return invoke('otp_preview', { input, path, fields });
 }

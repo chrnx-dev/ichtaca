@@ -54,6 +54,12 @@ pub enum Command {
         /// Remove a tag (repeatable).
         #[arg(long = "remove-tag")]
         remove_tags: Vec<String>,
+        /// Set the one-time code: a base32 secret or a full otpauth:// URI.
+        #[arg(long = "otp")]
+        otp: Option<String>,
+        /// Remove the entry's one-time code.
+        #[arg(long = "remove-otp", conflicts_with = "otp")]
+        remove_otp: bool,
     },
     /// Show an entry's metadata (use --json for machine-readable output).
     Show {
@@ -196,6 +202,33 @@ mod tests {
             3
         );
         assert_eq!(exit_code(&PassError::GitError("g".into())), 3);
+    }
+
+    #[test]
+    fn set_accepts_otp_flags() {
+        use clap::Parser;
+        let cli =
+            Cli::try_parse_from(["ichtaca", "set", "web/x", "--otp", "JBSWY3DPEHPK3PXP"]).unwrap();
+        match cli.cmd {
+            Some(Command::Set {
+                otp, remove_otp, ..
+            }) => {
+                assert_eq!(otp.as_deref(), Some("JBSWY3DPEHPK3PXP"));
+                assert!(!remove_otp);
+            }
+            _ => panic!("expected a Set command"),
+        }
+        // --otp and --remove-otp are mutually exclusive.
+        assert!(
+            Cli::try_parse_from(["ichtaca", "set", "web/x", "--otp", "X", "--remove-otp"]).is_err()
+        );
+    }
+
+    #[test]
+    fn git_defaults_to_status() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["ichtaca", "git"]).unwrap();
+        assert!(matches!(cli.cmd, Some(Command::Git { op: GitOp::Status })));
     }
 
     #[test]

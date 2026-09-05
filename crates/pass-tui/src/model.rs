@@ -990,6 +990,10 @@ impl Model {
             // ── Phase 3: Form submit ──────────────────────────────────────────
             Some(Msg::SubmitForm) => {
                 self.collect_form_values();
+                if let Err(e) = self.normalize_form_otp() {
+                    self.form.error = Some(e);
+                    return None;
+                }
                 match &self.overlay {
                     Overlay::Form(FormMode::Create) => {
                         let result = self.save_create();
@@ -1556,7 +1560,11 @@ impl Model {
 
         // OTP (focus index base + n)
         let otp_idx = base + self.form.fields.len();
-        let otp_field = FormField::new("OTP URI (otpauth://...)", &self.form.otp.clone(), false);
+        let otp_field = FormField::new(
+            "OTP (paste secret or otpauth:// URI)",
+            &self.form.otp.clone(),
+            false,
+        );
         self.app
             .mount(Id::FormField(otp_idx), Box::new(otp_field), vec![])
             .expect("mount OTP field");
@@ -1680,6 +1688,24 @@ impl Model {
             self.app.state(&Id::FormNotes)
         {
             self.form.notes = v;
+        }
+    }
+
+    /// Turn the OTP input into a canonical `otpauth://` URI, or report why it
+    /// cannot be one.
+    ///
+    /// The user may type a full URI or just the base32 secret a website showed
+    /// them; a bare secret is labelled with the entry's own name and its `user`
+    /// field so the code still identifies itself in other TOTP apps.
+    fn normalize_form_otp(&mut self) -> Result<(), String> {
+        let (issuer, account) = passcore::otp::label_from_entry(&self.form.path, &self.form.fields);
+
+        match passcore::otp::normalize_input(&self.form.otp, &issuer, &account) {
+            Ok(uri) => {
+                self.form.otp = uri.unwrap_or_default();
+                Ok(())
+            }
+            Err(e) => Err(format!("OTP: {e}")),
         }
     }
 
@@ -1976,7 +2002,7 @@ mod tests {
     use tuirealm::listener::EventListenerCfg;
 
     /// Build a minimal `Model` backed by `FakeStore` for testing.
-    fn test_model(store: FakeStore) -> Model {
+    pub(super) fn test_model(store: FakeStore) -> Model {
         let listener_cfg = EventListenerCfg::<NoUserEvent>::default();
         let app: Application<Id, Msg, NoUserEvent> = Application::init(listener_cfg);
         Model {
@@ -3455,5 +3481,68 @@ mod tests {
             model.form.focus_idx, 0,
             "focus must remain on path field after completion"
         );
+    }
+}
+
+#[cfg(test)]
+mod otp_form_tests {
+    use super::*;
+    use passcore::FakeStore;
+
+    const SECRET: &str = "GEZDGNBVGY3TQOJQ";
+
+    /// Build a create-mode model with the form pre-filled, as `collect_form_values`
+    /// would leave it just before submit.
+    fn form_model(otp: &str, fields: Vec<(&str, &str)>) -> Model {
+        let mut model = super::tests::test_model(FakeStore::new());
+        model.form = FormState {
+            mode: FormMode::Create,
+            path: "web/github.com".to_string(),
+            password: "pw".to_string(),
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            otp: otp.to_string(),
+            ..FormState::default()
+        };
+        model
+    }
+
+    #[test]
+    fn bare_secret_is_wrapped_with_the_entry_label() {
+        let mut model = form_model(SECRET, vec![("user", "alice")]);
+        model.normalize_form_otp().expect("a valid secret");
+        let cfg = passcore::OtpConfig::parse(&model.form.otp).expect("valid URI");
+        assert_eq!(cfg.secret, SECRET);
+        assert_eq!(cfg.issuer, "github.com", "issuer comes from the entry path");
+        assert_eq!(cfg.account, "alice", "account comes from the user field");
+    }
+
+    #[test]
+    fn invalid_secret_blocks_the_save() {
+        let mut model = form_model("not-base32!!", vec![]);
+        let err = model
+            .normalize_form_otp()
+            .expect_err("must not save silently");
+        assert!(
+            err.starts_with("OTP:"),
+            "error is attributed to the OTP field: {err}"
+        );
+    }
+
+    #[test]
+    fn blank_otp_stays_blank() {
+        let mut model = form_model("   ", vec![]);
+        model.normalize_form_otp().unwrap();
+        assert!(model.form.otp.is_empty(), "no OTP is a normal entry");
+    }
+
+    #[test]
+    fn pasted_uri_survives_unchanged() {
+        let uri = format!("otpauth://totp/GitHub:alice?secret={SECRET}&period=60");
+        let mut model = form_model(&uri, vec![]);
+        model.normalize_form_otp().unwrap();
+        assert_eq!(model.form.otp, uri);
     }
 }

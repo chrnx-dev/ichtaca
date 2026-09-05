@@ -27,6 +27,8 @@ pub fn run(cmd: Command) -> CliResult {
             tags,
             remove_fields,
             remove_tags,
+            otp,
+            remove_otp,
         } => set(
             &config,
             &path,
@@ -35,6 +37,8 @@ pub fn run(cmd: Command) -> CliResult {
             &tags,
             &remove_fields,
             &remove_tags,
+            otp.as_deref(),
+            remove_otp,
         ),
         Command::Doctor => unreachable!("Doctor is handled in dispatch"),
         Command::Git { op } => git(&config, op),
@@ -140,6 +144,9 @@ fn generate(config: &passcore::Config, path: &str, length: usize, no_symbols: bo
     Ok(())
 }
 
+// The parameters mirror the `Command::Set` clap variant one-for-one; wrapping
+// them in a struct would just restate clap's own definition.
+#[allow(clippy::too_many_arguments)]
 fn set(
     config: &passcore::Config,
     path: &str,
@@ -148,16 +155,20 @@ fn set(
     tags: &[String],
     remove_fields: &[String],
     remove_tags: &[String],
+    otp: Option<&str>,
+    remove_otp: bool,
 ) -> CliResult {
     if !password_stdin
         && fields.is_empty()
         && tags.is_empty()
         && remove_fields.is_empty()
         && remove_tags.is_empty()
+        && otp.is_none()
+        && !remove_otp
     {
         return Err(CliError::Usage(
             "nothing to set: pass --password-stdin, --field key=value, --tag, \
-             --remove-field, and/or --remove-tag"
+             --remove-field, --remove-tag, --otp, and/or --remove-otp"
                 .into(),
         ));
     }
@@ -187,6 +198,16 @@ fn set(
         tags,
         remove_tags,
     );
+    // OTP after the fields, so a `--field user=…` set in the same call can
+    // label a bare secret.
+    if remove_otp {
+        entry.set_otp(None);
+    } else if let Some(raw) = otp {
+        let fields_now: Vec<(String, String)> = entry.fields();
+        let (issuer, account) = passcore::otp::label_from_entry(path, &fields_now);
+        let uri = passcore::otp::normalize_input(raw, &issuer, &account)?;
+        entry.set_otp(uri.as_deref());
+    }
     init.store
         .insert(path, &passcore::Secret::from(entry.serialize()), true)?;
     Ok(())

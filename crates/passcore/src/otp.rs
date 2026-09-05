@@ -247,6 +247,21 @@ pub fn normalize_input(input: &str, issuer: &str, account: &str) -> Result<Optio
     Ok(Some(cfg.to_uri()))
 }
 
+/// Default label for a bare secret: issuer from the entry path's last segment,
+/// account from whichever username-ish field the entry has.
+///
+/// Shared so the TUI and the desktop app agree on what a wrapped secret is
+/// called — the label is what other TOTP apps display.
+pub fn label_from_entry(path: &str, fields: &[(String, String)]) -> (String, String) {
+    let issuer = path.trim().rsplit('/').next().unwrap_or("").to_string();
+    let account = fields
+        .iter()
+        .find(|(k, _)| matches!(k.to_lowercase().as_str(), "user" | "username" | "login"))
+        .map(|(_, v)| v.trim().to_string())
+        .unwrap_or_default();
+    (issuer, account)
+}
+
 /// Case-insensitive `otpauth://totp/` prefix strip.
 fn strip_totp_prefix(uri: &str) -> Option<&str> {
     const PREFIX: &str = "otpauth://totp/";
@@ -574,6 +589,21 @@ mod config_tests {
             ""
         )
         .is_err());
+    }
+
+    #[test]
+    fn entry_label_prefers_the_username_field() {
+        let fields = vec![
+            ("url".to_string(), "https://github.com".to_string()),
+            ("Login".to_string(), "alice".to_string()),
+        ];
+        let (issuer, account) = label_from_entry("web/github.com", &fields);
+        assert_eq!(issuer, "github.com");
+        assert_eq!(account, "alice", "matched case-insensitively");
+
+        let (issuer, account) = label_from_entry("solo", &[]);
+        assert_eq!(issuer, "solo");
+        assert_eq!(account, "", "no username field is fine");
     }
 
     #[test]
