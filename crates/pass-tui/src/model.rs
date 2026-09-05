@@ -1003,6 +1003,12 @@ impl Model {
                         } else {
                             self.close_overlay();
                             self.reload_tree();
+                            // Load the entry we just created: `save_create` moved
+                            // the selection to it, so without this the panel shows
+                            // the new title over the previous entry's fields.
+                            if let Some(path) = self.selected_path.clone() {
+                                self.load_detail(&path);
+                            }
                             let _ = self.app.active(&Id::Tree);
                         }
                     }
@@ -1705,7 +1711,7 @@ impl Model {
                 self.form.otp = uri.unwrap_or_default();
                 Ok(())
             }
-            Err(e) => Err(format!("OTP: {e}")),
+            Err(e) => Err(format!("OTP: {}", passcore::otp::error_message(&e))),
         }
     }
 
@@ -3525,9 +3531,10 @@ mod otp_form_tests {
         let err = model
             .normalize_form_otp()
             .expect_err("must not save silently");
-        assert!(
-            err.starts_with("OTP:"),
-            "error is attributed to the OTP field: {err}"
+        assert_eq!(
+            err, "OTP: secret is not valid base32",
+            "the message names the OTP field and says what is wrong, with no \
+             generic entry-parse prefix"
         );
     }
 
@@ -3536,6 +3543,38 @@ mod otp_form_tests {
         let mut model = form_model("   ", vec![]);
         model.normalize_form_otp().unwrap();
         assert!(model.form.otp.is_empty(), "no OTP is a normal entry");
+    }
+
+    /// Creating an entry must leave the detail panel showing *that* entry, not
+    /// the previously selected one under a new title.
+    #[test]
+    fn create_loads_the_new_entry_into_the_detail_panel() {
+        let mut store = FakeStore::new();
+        store.seed("web/old", "oldpw\nuser: bob\n");
+        let mut model = super::tests::test_model(store);
+        model.mount_phase2();
+        model.update(Some(Msg::SelectEntry("web/old".to_string())));
+        assert_eq!(
+            model.detail_entry.as_ref().unwrap().field("user"),
+            Some("bob")
+        );
+
+        model.form = FormState {
+            mode: FormMode::Create,
+            path: "web/new".to_string(),
+            password: "newpw".to_string(),
+            fields: vec![("user".to_string(), "alice".to_string())],
+            ..FormState::default()
+        };
+        model.overlay = Overlay::Form(FormMode::Create);
+        model.update(Some(Msg::SubmitForm));
+
+        assert_eq!(model.selected_path.as_deref(), Some("web/new"));
+        assert_eq!(
+            model.detail_entry.as_ref().and_then(|e| e.field("user")),
+            Some("alice"),
+            "the panel must show the entry that was just created"
+        );
     }
 
     #[test]

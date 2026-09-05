@@ -91,7 +91,9 @@ fn normalize_otp(
         return Ok(None);
     };
     let (issuer, account) = passcore::otp::label_from_entry(path, fields);
-    passcore::otp::normalize_input(raw, &issuer, &account).map_err(CommandError::from)
+    passcore::otp::normalize_input(raw, &issuer, &account).map_err(|e| CommandError {
+        message: passcore::otp::error_message(&e),
+    })
 }
 
 // ── impl helpers (testable without a Tauri runtime) ──────────────────────────

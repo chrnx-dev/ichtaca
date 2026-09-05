@@ -24,7 +24,9 @@ pub fn otp_preview_impl(
 ) -> CommandResult<OtpPreview> {
     let (issuer, account) = passcore::otp::label_from_entry(path, fields);
     let uri =
-        passcore::otp::normalize_input(input, &issuer, &account).map_err(CommandError::from)?;
+        passcore::otp::normalize_input(input, &issuer, &account).map_err(|e| CommandError {
+            message: passcore::otp::error_message(&e),
+        })?;
     let summary = match &uri {
         None => None,
         Some(u) => Some(

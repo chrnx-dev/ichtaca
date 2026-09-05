@@ -262,6 +262,17 @@ pub fn label_from_entry(path: &str, fields: &[(String, String)]) -> (String, Str
     (issuer, account)
 }
 
+/// The bare message from an OTP validation failure.
+///
+/// `PassError::Parse` renders as "could not parse entry: …", which reads wrong
+/// next to an OTP input — the entry parsed fine, the OTP did not.
+pub fn error_message(e: &PassError) -> String {
+    match e {
+        PassError::Parse(m) => m.clone(),
+        other => other.to_string(),
+    }
+}
+
 /// Case-insensitive `otpauth://totp/` prefix strip.
 fn strip_totp_prefix(uri: &str) -> Option<&str> {
     const PREFIX: &str = "otpauth://totp/";
