@@ -22,6 +22,12 @@ pub(crate) fn resolve_store_dir(
         .join(".password-store")
 }
 
+/// Resolve the store directory using the process environment. Public entry
+/// point for callers (git status, doctor) that hold only a `Config`.
+pub fn store_dir(override_dir: Option<PathBuf>) -> PathBuf {
+    resolve_store_dir(override_dir, |k| std::env::var(k).ok())
+}
+
 /// Error if the store directory does not exist.
 pub(crate) fn ensure_store_exists(dir: &Path) -> Result<()> {
     if dir.is_dir() {

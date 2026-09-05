@@ -7,7 +7,7 @@
  * `vi.mock('@tauri-apps/api/core')`.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { DoctorReport, EntryInput, EntryMeta, EntryNode, OtpCode, UpdateInput } from './types';
+import type { DoctorReport, EntryInput, EntryMeta, EntryNode, GitOp, GitStatus, OtpCode, OtpPreview, UpdateInput } from './types';
 
 // ── Command wrappers ──────────────────────────────────────────────────────────
 
@@ -161,4 +161,34 @@ export function buildTree(paths: string[]): EntryNode[] {
     insertPath(roots, segments, p);
   }
   return roots as EntryNode[];
+}
+
+/**
+ * Local git state of the store, or null when it is not a git repo (or the app
+ * is in demo mode). Null means: render no git UI at all.
+ */
+export function gitStatus(): Promise<GitStatus | null> {
+  return invoke('git_status');
+}
+
+/**
+ * Run a git pull or push. Interactive prompts are disabled backend-side, so an
+ * SSH passphrase or credential prompt fails fast rather than hanging — the
+ * caller should tell the user to run `ichtaca git push` from a terminal.
+ */
+export function gitSync(op: GitOp): Promise<string> {
+  return invoke('git_sync', { op });
+}
+
+/**
+ * Ask the backend what it makes of an OTP input — a full `otpauth://` URI or a
+ * bare base32 secret. Rejects with a message the form can show. The write
+ * commands validate again, so this is feedback, not the gate.
+ */
+export function otpPreview(
+  input: string,
+  path: string,
+  fields: [string, string][],
+): Promise<OtpPreview> {
+  return invoke('otp_preview', { input, path, fields });
 }

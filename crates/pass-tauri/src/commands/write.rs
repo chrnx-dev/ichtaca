@@ -77,6 +77,25 @@ fn build_entry_text(input: &EntryInput) -> String {
     text
 }
 
+/// Turn the form's OTP input into a canonical `otpauth://` URI.
+///
+/// Applied on the write path, not just in the form, so nothing invalid reaches
+/// the store regardless of which caller asked. A bare base32 secret is wrapped
+/// using the entry's own path and username field as the label.
+fn normalize_otp(
+    otp: Option<&String>,
+    path: &str,
+    fields: &[(String, String)],
+) -> CommandResult<Option<String>> {
+    let Some(raw) = otp else {
+        return Ok(None);
+    };
+    let (issuer, account) = passcore::otp::label_from_entry(path, fields);
+    passcore::otp::normalize_input(raw, &issuer, &account).map_err(|e| CommandError {
+        message: passcore::otp::error_message(&e),
+    })
+}
+
 // ── impl helpers (testable without a Tauri runtime) ──────────────────────────
 
 pub fn insert_impl(
@@ -85,6 +104,8 @@ pub fn insert_impl(
     input: EntryInput,
     overwrite: bool,
 ) -> CommandResult<()> {
+    let mut input = input;
+    input.otp = normalize_otp(input.otp.as_ref(), &path, &input.fields)?;
     let mut store = state.store()?;
     let text = build_entry_text(&input);
     let secret = Secret::from(text.as_str());
@@ -94,6 +115,8 @@ pub fn insert_impl(
 }
 
 pub fn update_entry_impl(state: &AppState, path: String, input: UpdateInput) -> CommandResult<()> {
+    let mut input = input;
+    input.otp = normalize_otp(input.otp.as_ref(), &path, &input.fields)?;
     let mut store = state.store()?;
     // Load existing entry, apply structured changes (preserves unknown lines).
     let mut entry = store.show(&path).map_err(CommandError::from)?;

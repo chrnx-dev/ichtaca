@@ -21,6 +21,6 @@ pub use form_modal::{FormField, FormMode};
 pub use header::Header;
 pub use notes_field::NotesField;
 pub use search_modal::{SearchInput, SearchResults};
-pub use status_bar::StatusBar;
+pub use status_bar::{git_chip, git_chip_width, StatusBar};
 pub use template_modal::TemplateModal;
 pub use tree::EntryTree;

@@ -82,7 +82,7 @@ Supported platforms: **macOS** and **Linux**.
 
 - **Tree browser** — navigate your store with vim keys (`hjkl`) or arrows; fields parsed straight from the `pass` format (password, user, URL, notes, custom fields)
 - **Masked by default** — passwords reveal only on an explicit action; never on screen by accident
-- **Live TOTP** — generate and copy one-time codes from `otpauth://` URIs stored in your entries
+- **Live TOTP** — paste the secret key a site shows you (or a full `otpauth://` URI) and Ichtaca builds, validates, and computes the code
 - **Copy & auto-clear** — clipboard clears after 45s (configurable), and only if the value is still the one you copied
 - **Create / edit / delete** — form-based with templates, custom fields & tags — or drop to a raw `$EDITOR`
 - **CSPRNG generator** — cryptographically secure passwords, configurable length and charset
@@ -184,7 +184,52 @@ Running `ichtaca` with no arguments launches the interactive TUI. Running `ichta
 | `ichtaca otp <path>` | Print the current TOTP code |
 | `ichtaca copy <path>` | Copy the password to the clipboard, then clear it after the configured `clear_after` timeout (blocks until cleared; Ctrl-C to keep). If `clear_after` is 0, copies and returns immediately without clearing. |
 | `ichtaca generate <path> [--length N] [--no-symbols]` | Generate and store a password, then print it to stdout; **refuses if the entry already exists** |
-| `ichtaca set <path> [--password-stdin] [--field key=value ...] [--tag tag ...] [--remove-field key ...] [--remove-tag tag ...]` | Create or update an entry; preserves existing OTP, tags, and fields |
+| `ichtaca set <path> [--password-stdin] [--field key=value ...] [--tag tag ...] [--remove-field key ...] [--remove-tag tag ...] [--otp secret-or-uri] [--remove-otp]` | Create or update an entry; preserves anything you do not mention |
+| `ichtaca git [status\|pull\|push]` | Git sync for the store repo. `status` is local-only; `pull`/`push` behave exactly like plain `git`, prompts included |
+
+#### One-time codes (TOTP)
+
+You never have to write an `otpauth://` URI by hand. In the OTP field of either app — or with `ichtaca set --otp` — paste **either**:
+
+- the **secret key** the site shows you next to the QR code (`JBSW Y3DP EHPK 3PXP`); spaces, dashes, padding and lowercase are all fine, or
+- a **full `otpauth://totp/…` URI**, if you exported one from another manager.
+
+A bare secret is wrapped into a URI labelled with the entry's own name and its `user` field, so the account still identifies itself if you ever import it elsewhere. A pasted URI is kept exactly as you typed it — unusual parameters and all — after being checked.
+
+Invalid input is refused at save time with the reason, in all three frontends. Previously a bad secret was stored happily and only failed later when you asked for a code.
+
+```bash
+# from the secret key on the site's 2FA page
+ichtaca set web/github.com --otp "JBSW Y3DP EHPK 3PXP"
+
+# or from a URI exported by another manager
+ichtaca set web/github.com --otp "otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&issuer=GitHub"
+
+ichtaca otp web/github.com     # 123456
+ichtaca set web/github.com --remove-otp
+```
+
+Defaults follow RFC 6238: SHA-1, 6 digits, 30-second period. Non-default values come through a pasted URI (`algorithm=`, `digits=`, `period=`) — which is how any service that uses them will hand them to you.
+
+**The secret is the second factor.** It lives in the entry as a plain `otpauth://` line, encrypted with the rest of the entry by GPG. Anyone who can decrypt the entry has both factors, so storing a password and its TOTP secret together trades some of 2FA's benefit for convenience — a deliberate choice `pass` users generally make knowingly. The raw URI is only revealed on an explicit action, never in listings or `--json` output. Keep the site's recovery codes somewhere else.
+
+#### Git sync
+
+`pass` already commits every write for you when `~/.password-store` is a git repo — Ichtaca adds the part `pass` leaves out: seeing that you have unpushed commits, and pushing them.
+
+The TUI footer shows a chip with the branch and how far ahead of the remote you are (` main ↑2`), and `Ctrl-g` pulls then pushes. The desktop app shows the same chip in its footer; click it to sync. **If the store is not a git repo, none of this appears** — no chip, no key, no nagging.
+
+The behind count (`↓`) comes from local refs, so it is only as fresh as your last pull. Nothing here ever fetches on its own.
+
+To put an existing store under git:
+
+```bash
+pass git init
+pass git remote add origin <url>
+pass git push -u origin main
+```
+
+Merge conflicts are deliberately not handled in-app: a failed pull stops before the push and leaves the store for you to fix with `pass git`.
 
 #### `ichtaca show` JSON shape
 
@@ -333,6 +378,7 @@ cargo run -p pass-tauri
 | `e` | Edit selected entry (form) |
 | `E` | Raw edit in `$EDITOR` |
 | `d` | Delete selected entry |
+| `Ctrl-g` | Git sync: pull `--rebase` then push (only when the store is a git repo) |
 | `q` / `Esc` | Quit |
 
 ---
@@ -451,7 +497,7 @@ ichtaca doctor   # confirm it is found
 
 ## Status
 
-**Beta** — `26.6.0-beta.1` (CalVer YY.MM.PATCH). The core read/write features are stable across the TUI, desktop, and CLI. Known rough edges: the macOS build is unsigned, and OTP has no structured editor yet. Expect possible breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
+**Beta** — `26.6.0-beta.1` (CalVer YY.MM.PATCH). The core read/write features are stable across the TUI, desktop, and CLI. Known rough edge: the macOS build is unsigned. Expect possible breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
 
 ---
 

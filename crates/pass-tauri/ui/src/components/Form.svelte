@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { showMeta, revealPassword, revealOtpUri, insert, updateEntry, generatePassword } from '../lib/api';
+  import { showMeta, revealPassword, revealOtpUri, insert, updateEntry, generatePassword, otpPreview } from '../lib/api';
   import type { EntryInput } from '../lib/types';
 
   interface Props {
@@ -42,6 +42,31 @@
   // ── Show/hide toggles for sensitive fields ────────────────────────────────────
   let showPassword = $state(false);
   let showOtp = $state(false);
+
+  // ── OTP feedback ──────────────────────────────────────────────────────────────
+  // The backend is the gate (the write commands validate too); this just tells
+  // the user what their input was understood to be, while they type.
+  let otpSummary = $state('');
+  let otpError = $state('');
+  let otpTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function checkOtp() {
+    clearTimeout(otpTimer);
+    otpTimer = setTimeout(async () => {
+      const typed = otp;
+      try {
+        const preview = await otpPreview(typed, entryPath, fields);
+        // Ignore a result that arrived after the user typed something else.
+        if (typed !== otp) return;
+        otpSummary = preview.summary ?? '';
+        otpError = '';
+      } catch (e) {
+        if (typed !== otp) return;
+        otpSummary = '';
+        otpError = e instanceof Error ? e.message : String(e);
+      }
+    }, 250);
+  }
 
   // ── Password generator (backend, CSPRNG, config-driven) ───────────────────────
 
@@ -303,18 +328,19 @@
           data-testid="add-field"
         >+ Add field</button>
 
-        <!-- OTP URI -->
+        <!-- OTP: a full otpauth:// URI, or just the secret the site showed -->
         <div class="form-control mb-2">
           <label class="label py-0.5" for="otp-input">
-            <span class="label-text text-xs font-semibold uppercase tracking-wider text-neutral">OTP URI</span>
+            <span class="label-text text-xs font-semibold uppercase tracking-wider text-neutral">One-time code</span>
           </label>
           <div class="flex gap-1.5">
             <input
               id="otp-input"
               class="input input-sm input-bordered bg-base-200 text-base-content font-mono flex-1 min-w-0"
               type={showOtp ? 'text' : 'password'}
-              placeholder="otpauth://totp/…  (optional)"
+              placeholder="Paste the secret key or an otpauth:// URI  (optional)"
               bind:value={otp}
+              oninput={checkOtp}
               data-testid="otp-input"
             />
             <button
@@ -327,6 +353,11 @@
               {showOtp ? 'Hide' : 'Show'}
             </button>
           </div>
+          {#if otpError}
+            <p class="text-error text-xs mt-1" data-testid="otp-error">{otpError}</p>
+          {:else if otpSummary}
+            <p class="text-success text-xs mt-1" data-testid="otp-summary">{otpSummary}</p>
+          {/if}
         </div>
 
         <!-- Tags -->

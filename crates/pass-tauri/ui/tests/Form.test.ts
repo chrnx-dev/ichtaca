@@ -19,9 +19,10 @@ vi.mock('../src/lib/api', () => ({
   generatePassword: vi.fn(),
   copyPassword: vi.fn(),
   otpCode: vi.fn(),
+  otpPreview: vi.fn(),
 }));
 
-import { insert, updateEntry, showMeta, revealPassword, revealOtpUri, generatePassword } from '../src/lib/api';
+import { insert, updateEntry, showMeta, revealPassword, revealOtpUri, generatePassword, otpPreview } from '../src/lib/api';
 
 const mockInsert = vi.mocked(insert);
 const mockUpdateEntry = vi.mocked(updateEntry);
@@ -29,6 +30,7 @@ const mockShowMeta = vi.mocked(showMeta);
 const mockRevealPassword = vi.mocked(revealPassword);
 const mockRevealOtpUri = vi.mocked(revealOtpUri);
 const mockGeneratePassword = vi.mocked(generatePassword);
+const mockOtpPreview = vi.mocked(otpPreview);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -779,5 +781,42 @@ describe('Form (create) — field key trimming', () => {
         false
       );
     });
+  });
+});
+
+// ── OTP input feedback ────────────────────────────────────────────────────────
+
+describe('Form — OTP feedback', () => {
+  it('shows what a pasted secret was understood to be', async () => {
+    mockOtpPreview.mockResolvedValue({
+      uri: 'otpauth://totp/github.com:alice?secret=GEZDGNBVGY3TQOJQ',
+      summary: 'github.com (alice) · 6 digits · 30s · SHA1',
+    });
+
+    const { getByTestId, findByTestId } = render(Form, {
+      props: { mode: 'create', onsaved: vi.fn(), oncancel: vi.fn() },
+    });
+
+    await fireEvent.input(getByTestId('otp-input'), {
+      target: { value: 'GEZDGNBVGY3TQOJQ' },
+    });
+
+    const summary = await findByTestId('otp-summary');
+    expect(summary.textContent).toContain('6 digits');
+    expect(mockOtpPreview).toHaveBeenCalled();
+  });
+
+  it('shows why an invalid secret cannot be saved', async () => {
+    mockOtpPreview.mockRejectedValue(new Error('secret is not valid base32'));
+
+    const { getByTestId, findByTestId, queryByTestId } = render(Form, {
+      props: { mode: 'create', onsaved: vi.fn(), oncancel: vi.fn() },
+    });
+
+    await fireEvent.input(getByTestId('otp-input'), { target: { value: 'nope!!' } });
+
+    const err = await findByTestId('otp-error');
+    expect(err.textContent).toContain('base32');
+    expect(queryByTestId('otp-summary')).toBeNull();
   });
 });

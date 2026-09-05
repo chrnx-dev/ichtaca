@@ -54,6 +54,12 @@ pub enum Command {
         /// Remove a tag (repeatable).
         #[arg(long = "remove-tag")]
         remove_tags: Vec<String>,
+        /// Set the one-time code: a base32 secret or a full otpauth:// URI.
+        #[arg(long = "otp")]
+        otp: Option<String>,
+        /// Remove the entry's one-time code.
+        #[arg(long = "remove-otp", conflicts_with = "otp")]
+        remove_otp: bool,
     },
     /// Show an entry's metadata (use --json for machine-readable output).
     Show {
@@ -63,6 +69,19 @@ pub enum Command {
     },
     /// Diagnose the environment (pass/gpg/store).
     Doctor,
+    /// Git sync for the store repo: status, pull, or push.
+    Git {
+        #[arg(value_enum, default_value_t = GitOp::Status)]
+        op: GitOp,
+    },
+}
+
+/// Git operations exposed on the CLI. `status` is local-only (no network).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum GitOp {
+    Status,
+    Pull,
+    Push,
 }
 
 /// CLI-layer error: either a passcore failure or a usage/input problem.
@@ -134,6 +153,27 @@ fn doctor() -> i32 {
         mark(report.store),
         report.store_dir.display()
     );
+    match passcore::git::status(&report.store_dir) {
+        Some(g) => println!(
+            "git:   {} (branch {}, {} ahead, {} behind{})",
+            if g.upstream { "ok" } else { "no remote" },
+            g.branch,
+            g.ahead,
+            g.behind,
+            if g.dirty > 0 {
+                format!(", {} uncommitted", g.dirty)
+            } else {
+                String::new()
+            },
+        ),
+        // Not an error: git sync is optional. Print the two commands that
+        // enable it and move on.
+        None => print!(
+            "git:   off\n\n{}",
+            passcore::git::setup_hint(&report.store_dir)
+        ),
+    }
+
     if report.ok() {
         0
     } else {
@@ -162,6 +202,33 @@ mod tests {
             3
         );
         assert_eq!(exit_code(&PassError::GitError("g".into())), 3);
+    }
+
+    #[test]
+    fn set_accepts_otp_flags() {
+        use clap::Parser;
+        let cli =
+            Cli::try_parse_from(["ichtaca", "set", "web/x", "--otp", "JBSWY3DPEHPK3PXP"]).unwrap();
+        match cli.cmd {
+            Some(Command::Set {
+                otp, remove_otp, ..
+            }) => {
+                assert_eq!(otp.as_deref(), Some("JBSWY3DPEHPK3PXP"));
+                assert!(!remove_otp);
+            }
+            _ => panic!("expected a Set command"),
+        }
+        // --otp and --remove-otp are mutually exclusive.
+        assert!(
+            Cli::try_parse_from(["ichtaca", "set", "web/x", "--otp", "X", "--remove-otp"]).is_err()
+        );
+    }
+
+    #[test]
+    fn git_defaults_to_status() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["ichtaca", "git"]).unwrap();
+        assert!(matches!(cli.cmd, Some(Command::Git { op: GitOp::Status })));
     }
 
     #[test]

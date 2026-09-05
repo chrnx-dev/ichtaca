@@ -219,6 +219,17 @@ pub struct Model {
     /// main loop after the editor returns.
     pub pending_raw_edit: Option<String>,
 
+    // ── Git sync ──────────────────────────────────────────────────────────────
+    /// Resolved store directory — the repo git commands run in.
+    pub store_dir: std::path::PathBuf,
+    /// Local git state of the store. `None` when the store is not a git repo
+    /// (or in demo mode): the whole git UI disappears rather than nagging a
+    /// user who never asked for sync.
+    pub git: Option<passcore::git::Status>,
+    /// When set, the main loop suspends the TUI and runs pull+push, so git's
+    /// credential and SSH passphrase prompts reach the real terminal.
+    pub pending_git_sync: bool,
+
     // ── Entry-path guard (Bug 2) ──────────────────────────────────────────────
     /// The set of real entry paths (leaves) from `store.list()`.
     /// Used to distinguish entry nodes from directory nodes in the tree so we
@@ -294,6 +305,7 @@ impl Model {
                 &self.form,
                 &self.custom_field,
                 self.search_content_mode,
+                self.git.as_ref(),
             );
         });
     }
@@ -305,6 +317,7 @@ impl Model {
         form: &FormState,
         custom_field: &CustomFieldState,
         search_content_mode: bool,
+        git: Option<&passcore::git::Status>,
     ) {
         let area = f.area();
 
@@ -341,7 +354,29 @@ impl Model {
             app.view(&Id::Detail, f, cols[1]);
         }
 
-        app.view(&Id::StatusBar, f, rows[2]);
+        // Footer: hint line on the left, git chip (if any) on the right.
+        match git {
+            None => app.view(&Id::StatusBar, f, rows[2]),
+            Some(status) => {
+                let chip_w = crate::components::git_chip_width(status).min(rows[2].width);
+                let footer = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Fill(1), Constraint::Length(chip_w)])
+                    .split(rows[2]);
+                app.view(&Id::StatusBar, f, footer[0]);
+                f.render_widget(
+                    tuirealm::ratatui::widgets::Paragraph::new(
+                        tuirealm::ratatui::text::Line::from(crate::components::git_chip(status)),
+                    )
+                    .style(
+                        tuirealm::ratatui::style::Style::default()
+                            .bg(theme::SURFACE)
+                            .fg(theme::MUTED),
+                    ),
+                    footer[1],
+                );
+            }
+        }
 
         // ── Overlay rendering ─────────────────────────────────────────────────
         match overlay {
@@ -798,6 +833,13 @@ impl Model {
                 None
             }
 
+            Some(Msg::GitSync) => {
+                // Deferred: the main loop suspends the terminal before running
+                // git, so prompts are visible. Ignored on a non-git store.
+                self.pending_git_sync = self.git.is_some();
+                None
+            }
+
             Some(Msg::CloseOverlay) => {
                 if self.overlay == Overlay::CustomField {
                     self.return_to_parent_form();
@@ -948,6 +990,10 @@ impl Model {
             // ── Phase 3: Form submit ──────────────────────────────────────────
             Some(Msg::SubmitForm) => {
                 self.collect_form_values();
+                if let Err(e) = self.normalize_form_otp() {
+                    self.form.error = Some(e);
+                    return None;
+                }
                 match &self.overlay {
                     Overlay::Form(FormMode::Create) => {
                         let result = self.save_create();
@@ -957,6 +1003,12 @@ impl Model {
                         } else {
                             self.close_overlay();
                             self.reload_tree();
+                            // Load the entry we just created: `save_create` moved
+                            // the selection to it, so without this the panel shows
+                            // the new title over the previous entry's fields.
+                            if let Some(path) = self.selected_path.clone() {
+                                self.load_detail(&path);
+                            }
                             let _ = self.app.active(&Id::Tree);
                         }
                     }
@@ -1514,7 +1566,11 @@ impl Model {
 
         // OTP (focus index base + n)
         let otp_idx = base + self.form.fields.len();
-        let otp_field = FormField::new("OTP URI (otpauth://...)", &self.form.otp.clone(), false);
+        let otp_field = FormField::new(
+            "OTP (paste secret or otpauth:// URI)",
+            &self.form.otp.clone(),
+            false,
+        );
         self.app
             .mount(Id::FormField(otp_idx), Box::new(otp_field), vec![])
             .expect("mount OTP field");
@@ -1641,6 +1697,24 @@ impl Model {
         }
     }
 
+    /// Turn the OTP input into a canonical `otpauth://` URI, or report why it
+    /// cannot be one.
+    ///
+    /// The user may type a full URI or just the base32 secret a website showed
+    /// them; a bare secret is labelled with the entry's own name and its `user`
+    /// field so the code still identifies itself in other TOTP apps.
+    fn normalize_form_otp(&mut self) -> Result<(), String> {
+        let (issuer, account) = passcore::otp::label_from_entry(&self.form.path, &self.form.fields);
+
+        match passcore::otp::normalize_input(&self.form.otp, &issuer, &account) {
+            Ok(uri) => {
+                self.form.otp = uri.unwrap_or_default();
+                Ok(())
+            }
+            Err(e) => Err(format!("OTP: {}", passcore::otp::error_message(&e))),
+        }
+    }
+
     /// Build a `Secret` and call `store.insert` for Create.
     fn save_create(&mut self) -> Result<(), String> {
         let path = self.form.path.trim().to_string();
@@ -1744,6 +1818,34 @@ impl Model {
         }
     }
 
+    /// Re-read the store's local git state (one `git status`, no network).
+    /// No-op in demo mode so the fake store never borrows a real repo's status.
+    pub fn refresh_git(&mut self) {
+        self.git = if self.demo {
+            None
+        } else {
+            passcore::git::status(&self.store_dir)
+        };
+    }
+
+    /// Pull then push, after the main loop has suspended the terminal.
+    ///
+    /// A failed pull skips the push — never push on top of an aborted rebase.
+    /// Conflicts are deliberately not handled here: git leaves the store in a
+    /// state the user resolves with git directly.
+    pub fn finish_git_sync(&mut self) {
+        use passcore::git::Op;
+        let result = passcore::git::sync(&self.store_dir, Op::Pull)
+            .and_then(|()| passcore::git::sync(&self.store_dir, Op::Push));
+        self.notice = Some(match result {
+            Ok(()) => "git: synced".to_string(),
+            Err(e) => format!("git: {e}"),
+        });
+        // A pull can add or remove entries, so the tree must be rebuilt.
+        self.reload_tree();
+        self.refresh_detail();
+    }
+
     /// Reload the tree widget from the store listing.
     ///
     /// Keeps `entry_paths` in sync with the store after any mutation, then
@@ -1752,6 +1854,9 @@ impl Model {
     fn reload_tree(&mut self) {
         // Keep entry_paths in sync with the store after any mutation.
         self.entry_paths = self.store.list().unwrap_or_default().into_iter().collect();
+        // `pass` auto-commits every write, so the ahead count moves with the
+        // tree; refresh it in the same place rather than at N call sites.
+        self.refresh_git();
         let selected = self.selected_path.clone();
         self.remount_tree(selected);
     }
@@ -1903,7 +2008,7 @@ mod tests {
     use tuirealm::listener::EventListenerCfg;
 
     /// Build a minimal `Model` backed by `FakeStore` for testing.
-    fn test_model(store: FakeStore) -> Model {
+    pub(super) fn test_model(store: FakeStore) -> Model {
         let listener_cfg = EventListenerCfg::<NoUserEvent>::default();
         let app: Application<Id, Msg, NoUserEvent> = Application::init(listener_cfg);
         Model {
@@ -1925,6 +2030,10 @@ mod tests {
             search_content_mode: false,
             pending_raw_edit: None,
             entry_paths: HashSet::new(),
+            // A path that is never a git repo, so tests never shell out to git.
+            store_dir: std::path::PathBuf::from("/nonexistent/ichtaca-test-store"),
+            git: None,
+            pending_git_sync: false,
         }
     }
 
@@ -3075,6 +3184,9 @@ mod tests {
             search_content_mode: false,
             pending_raw_edit: None,
             entry_paths: paths,
+            store_dir: std::path::PathBuf::from("/nonexistent/ichtaca-test-store"),
+            git: None,
+            pending_git_sync: false,
         }
     }
 
@@ -3375,5 +3487,101 @@ mod tests {
             model.form.focus_idx, 0,
             "focus must remain on path field after completion"
         );
+    }
+}
+
+#[cfg(test)]
+mod otp_form_tests {
+    use super::*;
+    use passcore::FakeStore;
+
+    const SECRET: &str = "GEZDGNBVGY3TQOJQ";
+
+    /// Build a create-mode model with the form pre-filled, as `collect_form_values`
+    /// would leave it just before submit.
+    fn form_model(otp: &str, fields: Vec<(&str, &str)>) -> Model {
+        let mut model = super::tests::test_model(FakeStore::new());
+        model.form = FormState {
+            mode: FormMode::Create,
+            path: "web/github.com".to_string(),
+            password: "pw".to_string(),
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            otp: otp.to_string(),
+            ..FormState::default()
+        };
+        model
+    }
+
+    #[test]
+    fn bare_secret_is_wrapped_with_the_entry_label() {
+        let mut model = form_model(SECRET, vec![("user", "alice")]);
+        model.normalize_form_otp().expect("a valid secret");
+        let cfg = passcore::OtpConfig::parse(&model.form.otp).expect("valid URI");
+        assert_eq!(cfg.secret, SECRET);
+        assert_eq!(cfg.issuer, "github.com", "issuer comes from the entry path");
+        assert_eq!(cfg.account, "alice", "account comes from the user field");
+    }
+
+    #[test]
+    fn invalid_secret_blocks_the_save() {
+        let mut model = form_model("not-base32!!", vec![]);
+        let err = model
+            .normalize_form_otp()
+            .expect_err("must not save silently");
+        assert_eq!(
+            err, "OTP: secret is not valid base32",
+            "the message names the OTP field and says what is wrong, with no \
+             generic entry-parse prefix"
+        );
+    }
+
+    #[test]
+    fn blank_otp_stays_blank() {
+        let mut model = form_model("   ", vec![]);
+        model.normalize_form_otp().unwrap();
+        assert!(model.form.otp.is_empty(), "no OTP is a normal entry");
+    }
+
+    /// Creating an entry must leave the detail panel showing *that* entry, not
+    /// the previously selected one under a new title.
+    #[test]
+    fn create_loads_the_new_entry_into_the_detail_panel() {
+        let mut store = FakeStore::new();
+        store.seed("web/old", "oldpw\nuser: bob\n");
+        let mut model = super::tests::test_model(store);
+        model.mount_phase2();
+        model.update(Some(Msg::SelectEntry("web/old".to_string())));
+        assert_eq!(
+            model.detail_entry.as_ref().unwrap().field("user"),
+            Some("bob")
+        );
+
+        model.form = FormState {
+            mode: FormMode::Create,
+            path: "web/new".to_string(),
+            password: "newpw".to_string(),
+            fields: vec![("user".to_string(), "alice".to_string())],
+            ..FormState::default()
+        };
+        model.overlay = Overlay::Form(FormMode::Create);
+        model.update(Some(Msg::SubmitForm));
+
+        assert_eq!(model.selected_path.as_deref(), Some("web/new"));
+        assert_eq!(
+            model.detail_entry.as_ref().and_then(|e| e.field("user")),
+            Some("alice"),
+            "the panel must show the entry that was just created"
+        );
+    }
+
+    #[test]
+    fn pasted_uri_survives_unchanged() {
+        let uri = format!("otpauth://totp/GitHub:alice?secret={SECRET}&period=60");
+        let mut model = form_model(&uri, vec![]);
+        model.normalize_form_otp().unwrap();
+        assert_eq!(model.form.otp, uri);
     }
 }

@@ -83,4 +83,9 @@ pub enum Msg {
     ConfirmDelete(bool),
     /// Close any overlay / modal.
     CloseOverlay,
+
+    // ── Git sync ─────────────────────────────────────
+    /// Pull then push the store's git repo (Ctrl-g). Ignored when the store
+    /// is not a git repo.
+    GitSync,
 }
