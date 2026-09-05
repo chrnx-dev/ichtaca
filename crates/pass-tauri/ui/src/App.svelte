@@ -7,8 +7,8 @@
   import ConfirmModal from './components/ConfirmModal.svelte';
   import SearchBar from './components/SearchBar.svelte';
   import SetupScreen from './components/SetupScreen.svelte';
-  import { doctor, list, showMeta, remove, buildTree } from './lib/api';
-  import type { DoctorReport, EntryMeta, EntryNode } from './lib/types';
+  import { doctor, list, showMeta, remove, buildTree, gitStatus, gitSync } from './lib/api';
+  import type { DoctorReport, EntryMeta, EntryNode, GitStatus } from './lib/types';
 
   let setup = $state<DoctorReport | null>(null);
   let tree = $state<EntryNode[]>([]);
@@ -18,6 +18,8 @@
   let statusKind = $state<'info' | 'error'>('info');
   let isLoading = $state(true);
   let allPaths = $state<string[]>([]);
+  let git = $state<GitStatus | null>(null);
+  let syncing = $state(false);
 
   // Modal / form state
   let showCreateForm = $state(false);
@@ -45,6 +47,7 @@
     try {
       allPaths = await list();
       tree = buildTree(allPaths);
+      git = await gitStatus();
     } catch (e) {
       showError(
         `Could not connect to the password store. ` +
@@ -116,6 +119,29 @@
     }
   }
 
+  // ── Git sync ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Pull then push. A failed pull skips the push — never push on top of an
+   * aborted rebase. Prompts are disabled backend-side, so auth that needs one
+   * fails fast and we point the user at a terminal.
+   */
+  async function handleGitSync() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      await gitSync('pull');
+      await gitSync('push');
+      showNotice('Store synced.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showError(`Git sync failed: ${msg}. If it needs a passphrase, run 'ichtaca git push' in a terminal.`);
+    } finally {
+      syncing = false;
+      git = await gitStatus();
+    }
+  }
+
   onMount(async () => {
     try {
       setup = await doctor();
@@ -124,6 +150,7 @@
       }
       allPaths = await list();
       tree = buildTree(allPaths);
+      git = await gitStatus();
     } catch (e) {
       setup = {
         pass: false, gpg: false, store_dir_exists: false, store_dir: '',
@@ -224,7 +251,7 @@
 
   <!-- ── Status footer ─────────────────────────────────────────────────────── -->
   <footer class="flex-shrink-0">
-    <StatusBar message={statusMessage} kind={statusKind} />
+    <StatusBar message={statusMessage} kind={statusKind} {git} {syncing} onsync={handleGitSync} />
   </footer>
 </div>
 

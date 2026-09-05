@@ -52,6 +52,8 @@ pub fn run() {
             commands::write::generate_password,
             commands::clipboard::copy_password,
             commands::doctor::doctor,
+            commands::git::git_status,
+            commands::git::git_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running pass-tauri");

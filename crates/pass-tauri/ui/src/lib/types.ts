@@ -59,3 +59,18 @@ export interface DoctorReport {
   demo: boolean;
   init_error: string | null;
 }
+
+/**
+ * Local git state of the store — mirrors `passcore::git::Status`.
+ * Read from local refs only: `behind` is as fresh as the last pull, never live.
+ */
+export interface GitStatus {
+  branch: string;
+  ahead: number;
+  behind: number;
+  dirty: number;
+  upstream: boolean;
+}
+
+/** A network git operation — mirrors `passcore::git::Op`. */
+export type GitOp = 'pull' | 'push';

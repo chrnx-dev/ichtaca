@@ -185,6 +185,25 @@ Running `ichtaca` with no arguments launches the interactive TUI. Running `ichta
 | `ichtaca copy <path>` | Copy the password to the clipboard, then clear it after the configured `clear_after` timeout (blocks until cleared; Ctrl-C to keep). If `clear_after` is 0, copies and returns immediately without clearing. |
 | `ichtaca generate <path> [--length N] [--no-symbols]` | Generate and store a password, then print it to stdout; **refuses if the entry already exists** |
 | `ichtaca set <path> [--password-stdin] [--field key=value ...] [--tag tag ...] [--remove-field key ...] [--remove-tag tag ...]` | Create or update an entry; preserves existing OTP, tags, and fields |
+| `ichtaca git [status\|pull\|push]` | Git sync for the store repo. `status` is local-only; `pull`/`push` behave exactly like plain `git`, prompts included |
+
+#### Git sync
+
+`pass` already commits every write for you when `~/.password-store` is a git repo — Ichtaca adds the part `pass` leaves out: seeing that you have unpushed commits, and pushing them.
+
+The TUI footer shows a chip with the branch and how far ahead of the remote you are (` main ↑2`), and `Ctrl-g` pulls then pushes. The desktop app shows the same chip in its footer; click it to sync. **If the store is not a git repo, none of this appears** — no chip, no key, no nagging.
+
+The behind count (`↓`) comes from local refs, so it is only as fresh as your last pull. Nothing here ever fetches on its own.
+
+To put an existing store under git:
+
+```bash
+pass git init
+pass git remote add origin <url>
+pass git push -u origin main
+```
+
+Merge conflicts are deliberately not handled in-app: a failed pull stops before the push and leaves the store for you to fix with `pass git`.
 
 #### `ichtaca show` JSON shape
 
@@ -333,6 +352,7 @@ cargo run -p pass-tauri
 | `e` | Edit selected entry (form) |
 | `E` | Raw edit in `$EDITOR` |
 | `d` | Delete selected entry |
+| `Ctrl-g` | Git sync: pull `--rebase` then push (only when the store is a git repo) |
 | `q` / `Esc` | Quit |
 
 ---
