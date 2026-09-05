@@ -63,6 +63,19 @@ pub enum Command {
     },
     /// Diagnose the environment (pass/gpg/store).
     Doctor,
+    /// Git sync for the store repo: status, pull, or push.
+    Git {
+        #[arg(value_enum, default_value_t = GitOp::Status)]
+        op: GitOp,
+    },
+}
+
+/// Git operations exposed on the CLI. `status` is local-only (no network).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum GitOp {
+    Status,
+    Pull,
+    Push,
 }
 
 /// CLI-layer error: either a passcore failure or a usage/input problem.
@@ -134,6 +147,27 @@ fn doctor() -> i32 {
         mark(report.store),
         report.store_dir.display()
     );
+    match passcore::git::status(&report.store_dir) {
+        Some(g) => println!(
+            "git:   {} (branch {}, {} ahead, {} behind{})",
+            if g.upstream { "ok" } else { "no remote" },
+            g.branch,
+            g.ahead,
+            g.behind,
+            if g.dirty > 0 {
+                format!(", {} uncommitted", g.dirty)
+            } else {
+                String::new()
+            },
+        ),
+        // Not an error: git sync is optional. Print the two commands that
+        // enable it and move on.
+        None => print!(
+            "git:   off\n\n{}",
+            passcore::git::setup_hint(&report.store_dir)
+        ),
+    }
+
     if report.ok() {
         0
     } else {

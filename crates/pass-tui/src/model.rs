@@ -219,6 +219,17 @@ pub struct Model {
     /// main loop after the editor returns.
     pub pending_raw_edit: Option<String>,
 
+    // ── Git sync ──────────────────────────────────────────────────────────────
+    /// Resolved store directory — the repo git commands run in.
+    pub store_dir: std::path::PathBuf,
+    /// Local git state of the store. `None` when the store is not a git repo
+    /// (or in demo mode): the whole git UI disappears rather than nagging a
+    /// user who never asked for sync.
+    pub git: Option<passcore::git::Status>,
+    /// When set, the main loop suspends the TUI and runs pull+push, so git's
+    /// credential and SSH passphrase prompts reach the real terminal.
+    pub pending_git_sync: bool,
+
     // ── Entry-path guard (Bug 2) ──────────────────────────────────────────────
     /// The set of real entry paths (leaves) from `store.list()`.
     /// Used to distinguish entry nodes from directory nodes in the tree so we
@@ -294,6 +305,7 @@ impl Model {
                 &self.form,
                 &self.custom_field,
                 self.search_content_mode,
+                self.git.as_ref(),
             );
         });
     }
@@ -305,6 +317,7 @@ impl Model {
         form: &FormState,
         custom_field: &CustomFieldState,
         search_content_mode: bool,
+        git: Option<&passcore::git::Status>,
     ) {
         let area = f.area();
 
@@ -341,7 +354,29 @@ impl Model {
             app.view(&Id::Detail, f, cols[1]);
         }
 
-        app.view(&Id::StatusBar, f, rows[2]);
+        // Footer: hint line on the left, git chip (if any) on the right.
+        match git {
+            None => app.view(&Id::StatusBar, f, rows[2]),
+            Some(status) => {
+                let chip_w = crate::components::git_chip_width(status).min(rows[2].width);
+                let footer = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Fill(1), Constraint::Length(chip_w)])
+                    .split(rows[2]);
+                app.view(&Id::StatusBar, f, footer[0]);
+                f.render_widget(
+                    tuirealm::ratatui::widgets::Paragraph::new(
+                        tuirealm::ratatui::text::Line::from(crate::components::git_chip(status)),
+                    )
+                    .style(
+                        tuirealm::ratatui::style::Style::default()
+                            .bg(theme::SURFACE)
+                            .fg(theme::MUTED),
+                    ),
+                    footer[1],
+                );
+            }
+        }
 
         // ── Overlay rendering ─────────────────────────────────────────────────
         match overlay {
@@ -795,6 +830,13 @@ impl Model {
                 // This also re-activates Id::Tree so browse keys work again.
                 self.remount_tree(Some(path));
                 self.redraw = true;
+                None
+            }
+
+            Some(Msg::GitSync) => {
+                // Deferred: the main loop suspends the terminal before running
+                // git, so prompts are visible. Ignored on a non-git store.
+                self.pending_git_sync = self.git.is_some();
                 None
             }
 
@@ -1744,6 +1786,34 @@ impl Model {
         }
     }
 
+    /// Re-read the store's local git state (one `git status`, no network).
+    /// No-op in demo mode so the fake store never borrows a real repo's status.
+    pub fn refresh_git(&mut self) {
+        self.git = if self.demo {
+            None
+        } else {
+            passcore::git::status(&self.store_dir)
+        };
+    }
+
+    /// Pull then push, after the main loop has suspended the terminal.
+    ///
+    /// A failed pull skips the push — never push on top of an aborted rebase.
+    /// Conflicts are deliberately not handled here: git leaves the store in a
+    /// state the user resolves with git directly.
+    pub fn finish_git_sync(&mut self) {
+        use passcore::git::Op;
+        let result = passcore::git::sync(&self.store_dir, Op::Pull)
+            .and_then(|()| passcore::git::sync(&self.store_dir, Op::Push));
+        self.notice = Some(match result {
+            Ok(()) => "git: synced".to_string(),
+            Err(e) => format!("git: {e}"),
+        });
+        // A pull can add or remove entries, so the tree must be rebuilt.
+        self.reload_tree();
+        self.refresh_detail();
+    }
+
     /// Reload the tree widget from the store listing.
     ///
     /// Keeps `entry_paths` in sync with the store after any mutation, then
@@ -1752,6 +1822,9 @@ impl Model {
     fn reload_tree(&mut self) {
         // Keep entry_paths in sync with the store after any mutation.
         self.entry_paths = self.store.list().unwrap_or_default().into_iter().collect();
+        // `pass` auto-commits every write, so the ahead count moves with the
+        // tree; refresh it in the same place rather than at N call sites.
+        self.refresh_git();
         let selected = self.selected_path.clone();
         self.remount_tree(selected);
     }
@@ -1925,6 +1998,10 @@ mod tests {
             search_content_mode: false,
             pending_raw_edit: None,
             entry_paths: HashSet::new(),
+            // A path that is never a git repo, so tests never shell out to git.
+            store_dir: std::path::PathBuf::from("/nonexistent/ichtaca-test-store"),
+            git: None,
+            pending_git_sync: false,
         }
     }
 
@@ -3075,6 +3152,9 @@ mod tests {
             search_content_mode: false,
             pending_raw_edit: None,
             entry_paths: paths,
+            store_dir: std::path::PathBuf::from("/nonexistent/ichtaca-test-store"),
+            git: None,
+            pending_git_sync: false,
         }
     }
 

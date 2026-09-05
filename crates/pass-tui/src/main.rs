@@ -57,6 +57,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Resolved store dir, kept for git operations on the store repo.
+    let store_dir = passcore::store_dir(config.store_dir.clone());
+
     // Initialise the terminal (crossterm).
     // CrosstermTerminalAdapter::new() installs the panic hook automatically,
     // and its Drop impl restores the terminal — no manual teardown needed.
@@ -92,9 +95,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         search_content_mode: false,
         pending_raw_edit: None,
         entry_paths: HashSet::new(),
+        store_dir,
+        git: None,
+        pending_git_sync: false,
     };
     model.mount_phase1();
     model.mount_phase2();
+    model.refresh_git();
 
     // ── Global subscriptions ─────────────────────────────────────────────────
     // StatusBar handles q/Esc/Ctrl-C as quit; Tree handles c, s, navigation,
@@ -132,6 +139,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             &Id::StatusBar,
             Sub::new(
                 EventClause::Keyboard(KeyEvent::new(Key::Char('c'), KeyModifiers::CONTROL)),
+                SubClause::Always,
+            ),
+        )
+        .ok();
+
+    // Ctrl-g — git pull + push (no-op when the store is not a git repo).
+    model
+        .app
+        .subscribe(
+            &Id::StatusBar,
+            Sub::new(
+                EventClause::Keyboard(KeyEvent::new(Key::Char('g'), KeyModifiers::CONTROL)),
                 SubClause::Always,
             ),
         )
@@ -191,6 +210,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             terminal.enter_alternate_screen().ok();
 
             // Force a full redraw so the TUI repaints over the editor output.
+            // `clear_screen` is required, not cosmetic: ratatui diffs each frame
+            // against its own buffer, which still holds the pre-suspend frame,
+            // so `redraw = true` alone repaints nothing.
+            terminal.clear_screen().ok();
+            model.redraw = true;
+        }
+
+        // ── Git-sync suspension ───────────────────────────────────────────
+        // Same deal as the raw edit: git may prompt for an SSH passphrase or
+        // HTTPS credentials, and those prompts need the real terminal.
+        if std::mem::take(&mut model.pending_git_sync) {
+            terminal.leave_alternate_screen().ok();
+            terminal.disable_raw_mode().ok();
+
+            model.finish_git_sync();
+
+            terminal.enable_raw_mode().ok();
+            terminal.enter_alternate_screen().ok();
+            terminal.clear_screen().ok();
             model.redraw = true;
         }
 

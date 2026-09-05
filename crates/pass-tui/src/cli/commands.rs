@@ -37,6 +37,38 @@ pub fn run(cmd: Command) -> CliResult {
             &remove_tags,
         ),
         Command::Doctor => unreachable!("Doctor is handled in dispatch"),
+        Command::Git { op } => git(&config, op),
+    }
+}
+
+/// `ichtaca git [status|pull|push]`. `status` is local-only; pull/push inherit
+/// stdio so credential prompts work exactly as they do with plain `git`.
+fn git(config: &passcore::Config, op: crate::cli::GitOp) -> CliResult {
+    use crate::cli::GitOp;
+    let dir = passcore::store_dir(config.store_dir.clone());
+    match op {
+        GitOp::Status => match passcore::git::status(&dir) {
+            Some(g) => {
+                println!(
+                    "{} ({} ahead, {} behind{})",
+                    g.branch,
+                    g.ahead,
+                    g.behind,
+                    if g.dirty > 0 {
+                        format!(", {} uncommitted", g.dirty)
+                    } else {
+                        String::new()
+                    }
+                );
+                if !g.upstream {
+                    println!("no upstream branch — nothing to push to");
+                }
+                Ok(())
+            }
+            None => Err(CliError::Usage(passcore::git::setup_hint(&dir))),
+        },
+        GitOp::Pull => passcore::git::sync(&dir, passcore::git::Op::Pull).map_err(CliError::from),
+        GitOp::Push => passcore::git::sync(&dir, passcore::git::Op::Push).map_err(CliError::from),
     }
 }
 

@@ -169,6 +169,9 @@ pub mod icons {
     /// Search / magnifying glass.  U+F002
     pub const SEARCH: &str = "\u{f002}";
 
+    /// Git branch (nf-oct-git_branch) — footer git chip.
+    pub const BRANCH: &str = "\u{f418}";
+
     /// Return the best icon for a known field key, falling back to `FIELD`.
     pub fn for_key(key: &str) -> &'static str {
         match key.to_lowercase().as_str() {
