@@ -18,7 +18,7 @@ pub use entry::{Entry, Template};
 pub use error::{PassError, Result};
 pub use generate::generate_password;
 pub use git::Status as GitStatus;
-pub use otp::{code_at, current, Otp};
+pub use otp::{code_at, current, Algorithm, Otp, OtpConfig};
 pub use runtime::{init_store, StoreInit};
 pub use search::{deep, fuzzy_paths, PathHit};
 pub use secret::Secret;
