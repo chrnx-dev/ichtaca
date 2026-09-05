@@ -4,6 +4,67 @@ All notable changes to **Ichtaca** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses CalVer
 (`YY.MM.PATCH`).
 
+## [26.9.0-beta.1] - 2026-09-04
+
+Closes the last two feature items on the beta roadmap: git sync and structured TOTP
+entry. Everything else on the beta checklist was already done in `26.6.0-beta.1`.
+
+### Added
+
+- **Git sync.** `pass` already commits every write when your store is a git repo;
+  Ichtaca adds the half it leaves out — seeing that you have unpushed commits, and
+  pushing them.
+  - TUI: a right-aligned footer chip (` main ↑2`) and `Ctrl-g` to pull `--rebase`
+    then push. Sync suspends the terminal, so SSH passphrase and credential prompts
+    are visible and answerable, exactly as with plain `git`.
+  - Desktop: the same chip in the status bar; click it to sync. Prompts are disabled
+    (a webview has no terminal), so auth that needs one fails fast and tells you to
+    run `ichtaca git push` from a shell.
+  - CLI: `ichtaca git [status|pull|push]`. `status` is local-only.
+  - `ichtaca doctor` reports the store's git state, or prints the two commands that
+    enable sync when the store has no repo.
+  - **When the store is not a git repo, none of this appears** — no chip, no key,
+    no error. The `↓` behind count comes from local refs, so it is only as fresh as
+    your last pull; nothing ever fetches on its own.
+- **Structured TOTP entry.** Adding a one-time code no longer means hand-writing an
+  `otpauth://` URI.
+  - The OTP field in both apps accepts either the **secret key** a site prints next
+    to its QR code — spaces, dashes, padding and lowercase all tolerated — or a full
+    `otpauth://totp/…` URI, which is kept verbatim (unknown parameters survive an edit).
+  - A bare secret is wrapped into a URI labelled with the entry's own name and its
+    `user` field, so the account still identifies itself if imported elsewhere.
+  - Invalid input is refused at save time with the reason. Previously a bad secret was
+    stored happily and only failed later when you asked for a code.
+  - The desktop form previews what the backend understood
+    (`GitHub (alice) · 6 digits · 30s · SHA1`) as you type.
+  - CLI: `ichtaca set <path> --otp <secret-or-uri>` and `--remove-otp`.
+  - Defaults follow RFC 6238 (SHA-1, 6 digits, 30s); non-default values come through
+    a pasted URI.
+
+### Fixed
+
+- **TUI repainted nothing after returning from a suspension.** Coming back from a raw
+  `$EDITOR` edit (`E`) left the screen blank: ratatui diffs each frame against its own
+  buffer, which still held the pre-suspend content, so the redraw was a no-op.
+- **Creating an entry showed the previous entry's fields.** `save_create` moved the
+  selection to the new entry but nothing reloaded the detail panel, so the new title
+  appeared over stale data — it looked as though the fields had not been saved.
+- OTP validation errors no longer read "could not parse entry: …". The entry parsed
+  fine; the OTP did not.
+
+### Beta stability notes
+
+**Stable in this release:** everything listed under `26.6.0-beta.1`, plus git sync and
+the OTP input contract (a bare base32 secret is accepted anywhere a URI is).
+
+**Known rough edges:**
+- macOS desktop builds are not yet code-signed or notarized; Gatekeeper blocks launch
+  on first open (right-click → Open, or `xattr -dr com.apple.quarantine`).
+- Git merge conflicts are not handled in-app by design: a failed pull stops before the
+  push and leaves the store for you to resolve with `pass git`.
+
+---
+
 ## [26.6.0-beta.1] - 2026-06-23
 
 ### Added
@@ -113,6 +174,7 @@ First public alpha. Expect rough edges.
 - All GPG/pinentry/key handling is delegated to `gpg`/`gpg-agent`.
 - No telemetry and no network access (other than `git` if your store uses it).
 
+[26.9.0-beta.1]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.9.0-beta.1
 [26.6.0-beta.1]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-beta.1
 [26.6.0-alpha.2]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha.2
 [26.6.0-alpha.1]: https://github.com/chrnx-dev/ichtaca/releases/tag/v26.6.0-alpha.1

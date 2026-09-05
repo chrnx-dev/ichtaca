@@ -337,7 +337,7 @@ the release workflow signs automatically once the Apple secrets are configured.
 
 #### Releases & artifacts
 
-Pushing a tag like `v26.6.0-beta.1` triggers `.github/workflows/release.yml`, which
+Pushing a tag like `v26.9.0-beta.1` triggers `.github/workflows/release.yml`, which
 builds the desktop bundles (macOS `.dmg`, Linux `.deb`/`.AppImage`) and the TUI
 binary tarballs for macOS (arm64 + Intel) and Linux, and attaches them to a draft
 GitHub Release.
@@ -497,7 +497,7 @@ ichtaca doctor   # confirm it is found
 
 ## Status
 
-**Beta** — `26.6.0-beta.1` (CalVer YY.MM.PATCH). The core read/write features are stable across the TUI, desktop, and CLI. Known rough edge: the macOS build is unsigned. Expect possible breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
+**Beta** — `26.9.0-beta.1` (CalVer YY.MM.PATCH). The core read/write features are stable across the TUI, desktop, and CLI, and git sync and TOTP entry are complete. Known rough edge: the macOS build is unsigned. Expect possible breaking changes before a stable release. Use on a real password store at your own risk; always keep a backup.
 
 ---
 
